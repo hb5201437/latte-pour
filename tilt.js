@@ -50,7 +50,8 @@ export class TiltInput {
   static flow(tilt, milk) {
     const start = config.tiltStart + (1 - milk) * config.tiltStartEmptyAdd;
     const f = Math.min(1, Math.max(0, (tilt - start) / config.tiltRange));
-    return f * f * (3 - 2 * f);
+    // 倾角和流量基本成正比，稍微压一下小倾角的流量：轻倾奶泡少，重倾奶泡多，差别明显
+    return f ** config.flowCurve;
   }
 
   static startAngle(milk) {

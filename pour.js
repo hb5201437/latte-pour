@@ -42,7 +42,8 @@ export class Pour {
     const fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
     const drift = Math.max(0, this.dx * fx + this.dy * fy);
     // 融合：先倒一段时间不出白
-    if (flowScale > 0) this.flowTime += dt * flowScale;
+    // 融合主要按时间算（流量只稍微影响快慢），轻轻倾斜也能很快出白，不会像没反应
+    if (flowScale > 0) this.flowTime += dt * (0.6 + 0.4 * flowScale);
     const fusion = this.flowTime < config.fusionSec;
     if (!fusion) this.foamTime += dt;
     const ramp = Math.min(1, (this.foamTime * 1000) / config.flowRampMs);

@@ -86,7 +86,7 @@ export class FoamSim {
   // phase 为当前晃动相位（每晃过一次中线 +1），fusion = true 表示还在融合阶段
   step(dt, src) {
     if (src.fusion) {
-      if (src.q > 0) this.fusion = Math.min(1, this.fusion + (dt * src.q / config.flowMax) / config.fusionSec);
+      if (src.q > 0) this.fusion = Math.min(1, this.fusion + (dt * (0.6 + 0.4 * src.q / config.flowMax)) / config.fusionSec);
       this.fusionX = src.x; this.fusionY = src.y;
       return;
     }
