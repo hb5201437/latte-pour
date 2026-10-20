@@ -82,6 +82,8 @@ export const PATTERNS = [
     layers: 6,
     needPull: true,
     needBack: 0.4, // 出奶时至少往后退 0.4 个杯口半径（叶脉）
+    iouZero: 0.72, // 模板照示范倒法量的，重叠率普遍高；示范倒法约 88 分，留出手比脚本更稳的余地
+    iouFull: 0.98,
     notch: false,
     startBack: 0.05,
     // 对照视频：原地摆动出半圆底纹 → 保持流量、边摆边匀速往后退（叶脉）→ 到杯口压低做一颗小心 → 垂直收尾
