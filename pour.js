@@ -21,7 +21,8 @@ export class Pour {
     this.halfPeriod = 0.15;  // 估计的半个晃动周期（秒）
   }
 
-  update(dt, x, y) {
+  // flowScale：额外的流量比例（陀螺仪模式下由前倾角决定，手指模式为 1）
+  update(dt, x, y, flowScale = 1) {
     this.elapsed += dt;
     const ivx = (x - this.px) / dt, ivy = (y - this.py) / dt;
     this.px = x; this.py = y;
@@ -37,7 +38,7 @@ export class Pour {
     const fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
     const drift = Math.max(0, this.dx * fx + this.dy * fy);
     const ramp = Math.min(1, (this.elapsed * 1000) / config.flowRampMs);
-    this.q = config.flowMax * Math.max(config.flowMinFrac, 1 - drift / config.pullSpeed) * ramp;
+    this.q = config.flowMax * Math.max(config.flowMinFrac, 1 - drift / config.pullSpeed) * ramp * flowScale;
 
     // 千层纹：每次晃过中线记一次。奶泡模型按这个计数在每次晃动的奶泡轮廓上画线。
     // 中线 = 横向位置的慢速平均。

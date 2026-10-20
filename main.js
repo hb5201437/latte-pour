@@ -4,22 +4,46 @@ import { createGame } from './game.js';
 const $ = id => document.getElementById(id);
 const show = id => { for (const s of document.querySelectorAll('.screen')) s.hidden = s.id !== id; };
 
-// ?debug=sensors 打开第1步的传感器读数页，调第3步手感时用
-const debugSensors = new URLSearchParams(location.search).get('debug') === 'sensors';
+const params = new URLSearchParams(location.search);
+// ?debug=sensors 打开第1步的传感器读数页
+const debugSensors = params.get('debug') === 'sensors';
+// ?debug=1 在游戏画面上显示陀螺仪读数
+const debugHud = params.get('debug') === '1';
+// ?mode=touch 强制手指模式（手机上对比用）
+const forceTouch = params.get('mode') === 'touch';
+
+const HINTS = {
+  tilt: '横握手机，屏幕上沿往前压开始倒奶 · 左右摇晃出千层纹 · 最后向前一推收尾',
+  touch: '在杯子上半部按住倒奶 · 按住时左右来回晃出千层纹 · 最后快速向下一划穿过收尾',
+};
+
+const FALLBACK_NOTE = {
+  denied: '没有获得陀螺仪权限，已改用手指模式。',
+  unsupported: '这台设备读不到陀螺仪，已改用手指模式。',
+};
 
 let game = null;
 
 $('startBtn').addEventListener('click', async () => {
   if (debugSensors) return startSensorReadout();
+  if (game) return;
+
+  $('startBtn').disabled = true;
+  $('startNote').textContent = '正在连接陀螺仪…';
+  // requestSensors 必须在点击回调里第一个调用，iOS 才会弹权限框
+  const result = forceTouch ? 'forced' : await requestSensors();
+  const mode = result === 'granted' ? 'tilt' : 'touch';
+
   show('play');
+  $('hint').textContent = (FALLBACK_NOTE[result] || '') + HINTS[mode];
   $('hint').hidden = false;
   $('result').hidden = true;
-  if (!game) {
-    game = createGame($('cup'), {
-      onEnd: () => { $('result').hidden = false; },
-    });
-    $('cup').addEventListener('pointerdown', () => { $('hint').hidden = true; });
-  }
+  game = createGame($('cup'), {
+    mode,
+    debug: debugHud,
+    onStart: () => { $('hint').hidden = true; },
+    onEnd: () => { $('result').hidden = false; },
+  });
 });
 
 $('againBtn').addEventListener('click', () => {
@@ -28,17 +52,13 @@ $('againBtn').addEventListener('click', () => {
   $('hint').hidden = false;
 });
 
-// —— 第1步：传感器读数 ——
+// —— 第1步：传感器读数页 ——
 
 const MODE_TEXT = {
   granted: '陀螺仪已连接，倾斜手机看看数字变化',
-  denied: '没有获得传感器权限，之后会改用手指拖动模式',
-  unsupported: '这台设备读不到陀螺仪，之后会改用手指拖动模式',
+  denied: '没有获得传感器权限',
+  unsupported: '这台设备读不到陀螺仪',
 };
-
-if (debugSensors && !window.isSecureContext) {
-  $('startNote').textContent = '当前不是 HTTPS 页面，iPhone 上读不到陀螺仪';
-}
 
 async function startSensorReadout() {
   $('startBtn').disabled = true;

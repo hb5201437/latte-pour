@@ -1,10 +1,14 @@
 import { config } from './config.js';
 import { FoamSim } from './sim.js';
 import { Pour } from './pour.js';
+import { TiltInput } from './tilt.js';
 
-// 手指/鼠标版：按住 = 倒奶，倒奶点跟着手指走，松手 = 结束。
-// 流量、穿心、千层纹的规则在 pour.js。
-export function createGame(canvas, { onEnd }) {
+// 两种操作方式：
+//   tilt（陀螺仪）：前倾 = 倒奶，倾角越大流量越大；左右晃 = 奶柱横向晃；
+//                   向前一推 = 穿心（奶柱自动往前划过）；收回端平 = 倒完
+//   touch（手指）： 按住 = 倒奶，倒奶点跟着手指走；快速往前划 = 穿心；松手 = 倒完
+// 流量、穿心降流量、千层纹的规则在 pour.js，两种方式共用。
+export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   const ctx = canvas.getContext('2d');
   const n = config.gridSize;
   const sim = new FoamSim(n);
@@ -21,6 +25,15 @@ export function createGame(canvas, { onEnd }) {
   const pour = new Pour();
   // 倒奶点（格坐标）
   const p = { x: n / 2, y: n / 2 };
+
+  // 陀螺仪模式状态
+  const tiltIn = mode === 'tilt' ? new TiltInput() : null;
+  const fwd = { x: Math.cos(config.forwardAngle), y: Math.sin(config.forwardAngle) };
+  const lat = { x: fwd.y, y: -fwd.x }; // 横向（forward 朝下时为屏幕向右）
+  let pulling = false;
+  let lowFor = 0;
+  let hud = null; // 调试读数
+  let accelShow = 0;
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, config.maxDpr);
@@ -45,20 +58,21 @@ export function createGame(canvas, { onEnd }) {
   }
 
   canvas.addEventListener('pointerdown', e => {
-    if (state !== 'ready') return;
+    if (mode !== 'touch' || state !== 'ready') return;
     canvas.setPointerCapture(e.pointerId);
     [p.x, p.y] = toGrid(e);
     pour.start(p.x, p.y);
     elapsed = 0;
     state = 'pouring';
+    onStart();
   });
 
   canvas.addEventListener('pointermove', e => {
-    if (state !== 'pouring') return;
+    if (mode !== 'touch' || state !== 'pouring') return;
     [p.x, p.y] = toGrid(e);
   });
 
-  const stop = () => { if (state === 'pouring') finish(); };
+  const stop = () => { if (mode === 'touch' && state === 'pouring') finish(); };
   canvas.addEventListener('pointerup', stop);
   canvas.addEventListener('pointercancel', stop);
 
@@ -68,11 +82,63 @@ export function createGame(canvas, { onEnd }) {
   }
 
   function update(dt) {
-    if (state !== 'pouring') return;
-    elapsed += dt;
-    sim.step(dt, pour.update(dt, p.x, p.y));
+    if (mode === 'tilt') updateTilt(dt);
+    else if (state === 'pouring') {
+      elapsed += dt;
+      sim.step(dt, pour.update(dt, p.x, p.y));
+    }
+    if (state === 'pouring' && elapsed >= config.pourTimeLimit) finish();
+  }
 
-    if (elapsed >= config.pourTimeLimit) finish();
+  function updateTilt(dt) {
+    const c = n / 2;
+    if (state !== 'pouring') {
+      tiltIn.follow(dt);
+      const s = tiltIn.read(dt);
+      hud = s;
+      if (state === 'ready' && s.flow > 0) {
+        // 从杯心后方开始倒
+        p.x = c - fwd.x * config.pourStartBack * c;
+        p.y = c - fwd.y * config.pourStartBack * c;
+        pour.start(p.x, p.y);
+        elapsed = 0;
+        pulling = false;
+        lowFor = 0;
+        state = 'pouring';
+        onStart();
+      }
+      return;
+    }
+
+    elapsed += dt;
+    const s = tiltIn.read(dt);
+    hud = s;
+    accelShow = Math.max(accelShow * Math.exp(-dt / 0.6), s.accel);
+    let flowScale;
+
+    if (pulling) {
+      // 穿心：奶柱自动快速往前划，pour.js 会因为往前移动快而把流量降到最低
+      p.x += fwd.x * config.tiltPullSpeed * dt;
+      p.y += fwd.y * config.tiltPullSpeed * dt;
+      flowScale = 1;
+      const ahead = (p.x - c) * fwd.x + (p.y - c) * fwd.y;
+      sim.step(dt, pour.update(dt, p.x, p.y, flowScale));
+      if (ahead >= config.pullEnd * c) finish();
+      return;
+    }
+
+    // 倒奶点 = 起倒位置 + 左右晃带来的横移
+    const bx = c - fwd.x * config.pourStartBack * c;
+    const by = c - fwd.y * config.pourStartBack * c;
+    p.x = bx + lat.x * s.lateral;
+    p.y = by + lat.y * s.lateral;
+    flowScale = s.flow;
+    sim.step(dt, pour.update(dt, p.x, p.y, flowScale));
+
+    if (elapsed * 1000 > config.pushIgnoreMs && s.accel > config.pushAccel) pulling = true;
+
+    lowFor = s.flow === 0 ? lowFor + dt : 0;
+    if (lowFor * 1000 > config.stopHoldMs) finish();
   }
 
   function draw() {
@@ -128,6 +194,19 @@ export function createGame(canvas, { onEnd }) {
       ctx.fillStyle = 'rgba(255,255,255,0.9)';
       ctx.fill();
     }
+
+    // ?debug=1 时显示陀螺仪读数，调手感用
+    if (debug && hud) {
+      ctx.font = '12px ui-monospace, Menlo, monospace';
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      const lines = [
+        `前倾 ${hud.tilt.toFixed(1)}°  (起倒 ${config.tiltStart}° / 满 ${config.tiltFull}°)`,
+        `左右 ${hud.roll.toFixed(1)}°  横移 ${hud.lateral.toFixed(1)} 格`,
+        `流量 ${(pour.q / config.flowMax * 100).toFixed(0)}%  加速度峰值 ${accelShow.toFixed(1)} (推 >${config.pushAccel})`,
+        `状态 ${state}${pulling ? ' · 穿心' : ''}`,
+      ];
+      lines.forEach((t, i) => ctx.fillText(t, 12, 24 + i * 16));
+    }
   }
 
   function frame(now) {
@@ -146,6 +225,7 @@ export function createGame(canvas, { onEnd }) {
     reset() {
       sim.reset();
       elapsed = 0;
+      pulling = false;
       state = 'ready';
     },
   };
