@@ -132,3 +132,43 @@ button.secondary {
 .tier { font-style: italic; max-width: 30em; text-align: center; color: var(--foam); }
 .best { margin: 0 0 8px; font-size: 0.85rem; color: var(--muted); }
 .best.new { color: #f2c46d; font-weight: 600; }
+
+/* —— 质感升级 —— */
+:root { --gold: #f2c46d; }
+body {
+  background:
+    radial-gradient(120% 80% at 50% 35%, rgba(255, 210, 160, 0.08), transparent 60%),
+    linear-gradient(160deg, #3a2518, #24160e);
+}
+#start { gap: 22px; }
+.brand { display: flex; flex-direction: column; align-items: center; gap: 6px; text-align: center; }
+.logo { width: 120px; height: 120px; filter: drop-shadow(0 16px 30px rgba(0, 0, 0, 0.45)); }
+h1 { font-size: 2.4rem; letter-spacing: 0.02em; margin-top: 10px; }
+.tagline { margin: 0; font-family: "New York", ui-serif, Georgia, "Songti SC", serif; font-style: italic; font-size: 1.15rem; color: var(--foam); }
+.fineprint { margin: 0; font-size: 0.72rem; color: var(--muted); opacity: 0.7; }
+#startBtn {
+  padding: 16px 40px;
+  font-weight: 600;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+}
+button { transition: transform 0.08s ease; }
+button:active { transform: scale(0.97); }
+
+.result {
+  left: 50%; right: auto;
+  transform: translateX(-50%);
+  width: min(92vw, 420px);
+  padding: 18px 18px 16px;
+  border-radius: 22px;
+  background: rgba(28, 17, 11, 0.55);
+  -webkit-backdrop-filter: blur(14px) saturate(1.2);
+  backdrop-filter: blur(14px) saturate(1.2);
+  border: 1px solid rgba(246, 239, 230, 0.12);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.45);
+  animation: rise 0.35s ease-out;
+}
+@keyframes rise { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
+.score { font-size: 3.4rem; font-weight: 700; }
+.tier { font-family: "New York", ui-serif, Georgia, "Songti SC", serif; font-size: 1.1rem; line-height: 1.35; margin: 4px 0 2px; }
+.best.new { color: var(--gold); }
+.save-panel img { box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5); }

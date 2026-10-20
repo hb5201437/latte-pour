@@ -7,7 +7,7 @@ import { t, applyStatic, lang } from './i18n.js';
 import { verdict } from './verdicts.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1020-r22';
+const BUILD = '1020-r23';
 
 const $ = id => document.getElementById(id);
 applyStatic();

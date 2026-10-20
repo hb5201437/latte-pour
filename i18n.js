@@ -2,6 +2,8 @@
 const STRINGS = {
   en: {
     title: 'Latte Pour',
+    tagline: 'Master latte art in 8 seconds a day.',
+    fineprint: 'Results not guaranteed. Milk not included.',
     start: 'Start pouring',
     connecting: 'Connecting motion sensor…',
     hintTilt: 'Drag anywhere to move the pitcher and pick your entry point · Tip the top edge of the phone forward to pour — tip more, pour more · Once it turns white, rock side to side for layers · Give the phone a quick push forward to finish',
@@ -26,6 +28,8 @@ const STRINGS = {
   },
   zh: {
     title: 'Latte Pour',
+    tagline: '每天 8 秒，成为拉花大师。',
+    fineprint: '效果因人而异，牛奶自备。',
     start: '开始倒奶',
     connecting: '正在连接陀螺仪…',
     hintTilt: '手指按住拖动拉花缸选入点，倒的时候也能拖着往后退 · 屏幕上沿往前压出奶，压得越多流量越大 · 出白后左右匀速摇晃出千层纹 · 向前一推收尾',

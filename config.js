@@ -10,7 +10,7 @@ export const config = {
   // —— 画面 ——
   gridSize: 256,          // 模拟网格边长，越大越细腻越耗性能
   maxDpr: 2,              // 画布像素比上限
-  cupRadiusFrac: 0.40,    // 杯口半径占屏幕短边的比例
+  cupRadiusFrac: 0.34,    // 杯口半径占屏幕宽度的比例（杯碟和把手要放得下）
   pitcherSize: 0.72,      // 拉花缸缸身半径占杯口半径的比例（350ml 拉花缸约 7.5cm，杯口约 10cm）
   pitcherMilkSec: 7,      // 满流量倒多少秒把缸里的奶倒完（只影响画面）
 
