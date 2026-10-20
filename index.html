@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Latte Pour</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main id="start" class="screen">
+    <h1>Latte Pour</h1>
+    <button id="startBtn" type="button">开始倒奶</button>
+    <p id="startNote" class="note"></p>
+  </main>
+
+  <main id="sensor" class="screen" hidden>
+    <p id="mode" class="note"></p>
+    <dl class="readout">
+      <dt>beta（前后）</dt><dd id="beta">–</dd>
+      <dt>gamma（左右）</dt><dd id="gamma">–</dd>
+      <dt>alpha（朝向）</dt><dd id="alpha">–</dd>
+      <dt>加速度 x</dt><dd id="ax">–</dd>
+      <dt>加速度 y</dt><dd id="ay">–</dd>
+      <dt>加速度 z</dt><dd id="az">–</dd>
+      <dt>事件数</dt><dd id="count">0</dd>
+    </dl>
+  </main>
+
+  <footer>第三方库：无</footer>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
