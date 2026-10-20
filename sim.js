@@ -122,7 +122,10 @@ export class FoamSim {
     const k = src.q / (2 * Math.PI);
     const sig2 = config.dragRadius * config.dragRadius;
     const dragCut = sig2 * 9;
-    const drag = config.dragStrength;
+    // 奶柱真的落在液面上才会拖动、挤压、冲击奶泡；不出奶时挪动拉花缸，液面不受影响
+    // （收尾抬高时流量很小但不为零，仍然算有奶柱）
+    const stream = Math.min(1, src.q / (config.flowMax * config.flowMinFrac));
+    const drag = config.dragStrength * stream;
     const vmax = config.maxStepCells;
     const floor = config.foamFloor;
     const age = config.foamAgeRate * dt;
@@ -151,7 +154,7 @@ export class FoamSim {
     const ox = src.x + fx * ahead, oy = src.y + fy * ahead;
     // 奶柱本身往前冲，把落点后面的咖啡卷进奶泡后缘，自然形成心形上方的凹口
     // 抬高后奶柱更细但落得更猛，冲力不减，把凹口扎深
-    const jet = config.jetSpeed * Math.max(src.q / config.flowMax, (src.lift ?? 0) * config.liftJet) *
+    const jet = stream * config.jetSpeed * Math.max(src.q / config.flowMax, (src.lift ?? 0) * config.liftJet) *
       (1 + (src.wiggle ?? 0) * config.wiggleJetBoost);
     const jr = config.jetRadius * (1 + config.liftJetWiden * (src.lift ?? 0));
     const jsig2 = jr * jr;
@@ -159,25 +162,25 @@ export class FoamSim {
     const lift = src.lift ?? 0;
     const speed = Math.hypot(src.vx, src.vy);
     const tx = speed > 1 ? src.vx / speed : fx, ty = speed > 1 ? src.vy / speed : fy;
-    const squeeze = config.liftSqueeze * lift * speed;
+    const squeeze = config.liftSqueeze * lift * speed * stream;
     const qsig2 = config.liftSqueezeRadius * config.liftSqueezeRadius;
     const dsig = config.dragRadius * (1 - (1 - config.liftDragNarrow) * lift);
     const dsig2 = dsig * dsig;
     // 抬高收尾时奶泡像一张膜被整体带动：中间窄而强，外圈宽而弱，层层纹路被拉成 V
-    const tailAmp = config.liftDragTail * lift;
+    const tailAmp = config.liftDragTail * lift * stream;
     const tsig2 = config.liftDragTailRadius * config.liftDragTailRadius;
     const tailCut = tailAmp > 0 ? tsig2 * 6 : 0;
     // 抬高后奶柱又细又急，扎进液面下面，变成一个"吸口"：周围的奶泡往它这里流（前面的被往回吸、
     // 两边的往中间收），紧贴它的奶泡沉下去消失，只留下奶柱自己画的一条细白线。
     // 推推乐每一片被从中间切开、两瓣往回收成尖朝下的花瓣，心形前沿被收窄成尖，都是这样来的
-    const sinkV = config.liftSink * lift;
+    const sinkV = config.liftSink * lift * stream;
     const sinkR2 = config.liftSinkRadius * config.liftSinkRadius;
     const absorb = config.liftAbsorb * lift * dt;
     const absR2 = config.liftAbsorbRadius * config.liftAbsorbRadius;
     const dragK = 1 - config.liftDragCut * lift;
     // 尾流：奶柱已经划过的那条线上，奶泡往回（拉花缸方向）倒流，越靠近线越强、离奶柱越远越弱。
     // 推推乐划过之后每一片中间被往回带成尖朝下的花瓣；心形两瓣中间被往回带、凹口更深
-    const wakeV = speed > 20 ? config.liftWake * lift : 0;
+    const wakeV = speed > 20 ? config.liftWake * lift * stream : 0;
     const wakeW2 = config.liftWakeWidth * config.liftWakeWidth;
     const wakeL = config.liftWakeLength;
 
