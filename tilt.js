@@ -15,21 +15,49 @@ function pose() {
 
 export class TiltInput {
   constructor() {
-    this.basePitch = null;
+    this.basePitch = null;  // "奶缸放平"时手机的俯仰角
     this.rollCenter = null;
+    this.lastPitch = null;
+    this.rate = 0;          // 俯仰角变化速度（度/秒，平滑后）
+    this.stillFor = 0;      // 已经拿稳多久（秒）
+    this.calibrated = false; // 开始倒之前要先拿稳一下，确定"放平"是哪个姿势
   }
 
-  // 没在倒奶时调用。基准姿势只在往后仰时跟上去（往前倾一点都不吸收，
-  // 否则慢慢倾的时候基准跟着走，永远倾不到出奶的角度）
+  // 每帧调用：看手机是不是拿稳了
+  trackStill(dt, pitch) {
+    if (this.lastPitch != null) {
+      const r = Math.abs(pitch - this.lastPitch) / Math.max(dt, 1e-3);
+      this.rate += (r - this.rate) * (1 - Math.exp(-dt / 0.15));
+    }
+    this.lastPitch = pitch;
+    this.stillFor = this.rate < config.stillRate ? this.stillFor + dt : 0;
+  }
+
+  // 让"放平"的基准慢慢跟上当前姿势
+  ease(target, dt, tauMs) {
+    this.basePitch += (target - this.basePitch) * (1 - Math.exp((-dt * 1000) / tauMs));
+  }
+
+  // 还没开始倒的时候调用：拿稳不动时，当前姿势就是"放平"
   follow(dt) {
     const t = pose();
-    if (this.basePitch == null) { this.basePitch = t.pitch; this.rollCenter = t.roll; return; }
-    if (t.pitch > this.basePitch) {
-      const a = 1 - Math.exp((-dt * 1000) / config.baseFollowTauMs);
-      this.basePitch += (t.pitch - this.basePitch) * a;
-    }
+    if (this.basePitch == null) { this.basePitch = t.pitch; this.rollCenter = t.roll; this.lastPitch = t.pitch; return; }
+    this.trackStill(dt, t.pitch);
+    if (t.pitch > this.basePitch) this.ease(t.pitch, dt, config.baseFollowTauMs); // 往后仰随时跟上
+    else if (this.stillFor > config.stillSettleSec) this.ease(t.pitch, dt, config.baseSettleTauMs);
+    // 第一次拿稳：直接以当前姿势为"放平"（不能慢慢靠过去，否则基准还没到位就开始漏奶）
+    if (!this.calibrated && this.stillFor > config.calibrateSec) { this.basePitch = t.pitch; this.calibrated = true; }
     const a = 1 - Math.exp((-dt * 1000) / config.rollCenterTauMs);
     this.rollCenter += (t.roll - this.rollCenter) * a;
+  }
+
+  // 倒奶过程中调用：往后仰超过原来的放平位置，就以新姿势为准；
+  // 没在出奶、手又拿稳了（比如郁金香推完一片在等），也慢慢重新放平
+  relevel(dt, idle) {
+    const t = pose();
+    this.trackStill(dt, t.pitch);
+    if (t.pitch > this.basePitch) this.ease(t.pitch, dt, config.baseFollowTauMs);
+    else if (idle && this.stillFor > config.stillSettleSec) this.ease(t.pitch, dt, config.baseSettleTauMs);
   }
 
   read(dt) {

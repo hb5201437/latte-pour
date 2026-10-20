@@ -27,6 +27,7 @@ const STRINGS = {
     challenge: 'Can you beat {n}?',
     patterns: 'Try another pattern',
     comingSoon: 'Coming soon',
+    holdSteady: 'Hold the phone steady to level the pitcher…',
   },
   zh: {
     title: 'Latte Pour',
@@ -55,6 +56,7 @@ const STRINGS = {
     challenge: '你能超过 {n} 分吗？',
     patterns: '换个图案',
     comingSoon: '即将推出',
+    holdSteady: '拿稳手机，奶缸放平…',
   },
 };
 

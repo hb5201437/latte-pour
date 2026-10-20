@@ -55,6 +55,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   // 横向：垂直于前方、指向屏幕右侧，前方朝上朝下都一样
   const lat = fwd.y <= 0 ? { x: -fwd.y, y: fwd.x } : { x: fwd.y, y: -fwd.x };
   let pulling = false;
+  let calibrating = mode === 'tilt'; // 陀螺仪模式开始前要先拿稳手机
   let pullT = 0;
   let lowFor = 0;
   let hud = null; // 调试读数
@@ -245,7 +246,8 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
       s.flow = TiltInput.flow(s.tilt, pit.milk);
       hud = s;
       p.x = entry.x; p.y = entry.y;
-      if (state === 'ready' && s.flow > 0) {
+      calibrating = !tiltIn.calibrated;
+      if (state === 'ready' && tiltIn.calibrated && s.flow > 0) {
         lockScreenAngle();
         pour.start(p.x, p.y);
         elapsed = 0;
@@ -260,6 +262,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     elapsed += dt;
     const s = tiltIn.read(dt);
     s.flow = TiltInput.flow(s.tilt, pit.milk);
+    tiltIn.relevel(dt, s.flow < config.relevelFlow);
     hud = s;
     accelShow = Math.max(accelShow * Math.exp(-dt / 0.6), s.accel);
     let flowScale;
@@ -386,6 +389,16 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
       slosh,
     });
 
+    // 陀螺仪模式：还没校准好时提示拿稳
+    if (calibrating && state === 'ready') {
+      ctx.save();
+      ctx.font = '600 15px -apple-system, "PingFang SC", sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = 'rgba(246,239,230,0.9)';
+      ctx.fillText(t('holdSteady'), cx, cy - R * 1.35);
+      ctx.restore();
+    }
+
     // 当前操作模式，常驻在左下角
     ctx.font = '12px -apple-system, sans-serif';
     ctx.fillStyle = 'rgba(246,239,230,0.45)';
@@ -425,7 +438,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   return {
     isTilt: mode === 'tilt',
     // 调试用：当前倒奶状态
-    debugState: () => ({ state, x: +p.x.toFixed(1), y: +p.y.toFixed(1), q: Math.round(pour.q), lift: +(pour.lift || 0).toFixed(2), piece: pour.piece, poured: +poured.toFixed(2), paused: touchPausedFor }),
+    debugState: () => ({ state, x: +p.x.toFixed(1), y: +p.y.toFixed(1), q: Math.round(pour.q), lift: +(pour.lift || 0).toFixed(2), piece: pour.piece, poured: +poured.toFixed(2), paused: touchPausedFor, tilt: hud && +hud.tilt.toFixed(1), flow: hud && +(hud.flow || 0).toFixed(2), base: tiltIn && +tiltIn.basePitch.toFixed(1), milk: +pit.milk.toFixed(2) }),
     setPattern(p) { pattern = p; },
     foamCanvas: off, // 最后一帧渲染好的奶泡，保存图片用
     reset() {
