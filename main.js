@@ -4,9 +4,10 @@ import { setTiltFlip } from './tilt.js';
 import { makeSnapshot } from './snapshot.js';
 import { count } from './analytics.js';
 import { t, applyStatic, lang } from './i18n.js';
+import { verdict } from './verdicts.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1020-r20';
+const BUILD = '1020-r22';
 
 const $ = id => document.getElementById(id);
 applyStatic();
@@ -23,7 +24,10 @@ const forceTouch = params.get('mode') === 'touch';
 
 const HINTS = { tilt: t('hintTilt'), touch: t('hintTouch') };
 const FALLBACK_NOTE = { denied: t('fallbackDenied'), unsupported: t('fallbackUnsupported') };
-const TIER_KEY = { try: 'tierTry', ok: 'tierOk', good: 'tierGood' };
+// 本机最高分
+const BEST_KEY = 'latte-pour.best';
+let best = 0;
+try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* 读不到就从 0 开始 */ }
 
 let game = null;
 let lastResult = null;
@@ -64,17 +68,27 @@ $('startBtn').addEventListener('click', async () => {
     debug: debugHud,
     onStart: () => { $('hint').hidden = true; $('flipBtn').hidden = true; count('pour-start', 'Pour started', true); },
     onEnd: r => {
-      lastResult = r;
+      const v = verdict(r.score, r.overflow);
+      const newBest = !r.overflow && r.score > best;
+      if (newBest) {
+        best = r.score;
+        try { localStorage.setItem(BEST_KEY, String(best)); } catch { /* 忽略 */ }
+      }
+      lastResult = { ...r, verdict: v.text, best };
       $('scoreNum').textContent = r.score;
-      $('scoreTier').textContent = t(TIER_KEY[r.tier]);
+      $('scoreTier').textContent = v.text;
+      $('bestLine').textContent = newBest ? t('newBest') : t('best') + ' ' + best;
+      $('bestLine').classList.toggle('new', newBest);
       $('result').hidden = false;
+      if (r.overflow) count('overflow', 'Overflowed the cup', true);
+      if (newBest) count('new-best', 'New personal best', true);
       count('pour-done', 'Finished a pour', true);
       // GoatCounter 按访客去重，同一路径一次访问只算一次；所以用"第几杯"分开记，
       // pour-3 的人数 = 这次打开至少倒了 3 杯的人数
       poursThisVisit++;
       const nth = poursThisVisit >= 5 ? '5+' : String(poursThisVisit);
       count('pour-' + nth, `Pour #${nth} this visit`, true);
-      count('score-' + r.tier, 'Score tier: ' + r.tier, true);
+      count('score-' + v.key, 'Verdict tier: ' + v.key, true);
     },
   });
   count('mode-' + mode, mode === 'tilt' ? 'Motion controls' : 'Finger controls', true);

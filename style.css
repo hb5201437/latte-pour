@@ -129,3 +129,6 @@ button.secondary {
 .save-panel img { max-width: min(100%, 520px); max-height: 70vh; border-radius: 8px; -webkit-touch-callout: default; user-select: auto; }
 .save-panel a { color: var(--foam); }
 .actions button { white-space: nowrap; padding: 12px 22px; font-size: 1.05rem; }
+.tier { font-style: italic; max-width: 30em; text-align: center; color: var(--foam); }
+.best { margin: 0 0 8px; font-size: 0.85rem; color: var(--muted); }
+.best.new { color: #f2c46d; font-weight: 600; }

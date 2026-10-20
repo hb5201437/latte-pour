@@ -64,19 +64,28 @@ export function takeAccelPeak() {
 // 屏幕的俯仰和左右倾（度），按屏幕当前显示方向计算，横屏竖屏都适用。
 //   pitch：屏幕上沿相对水平面抬起的角度，上沿往下压时变小
 //   roll：屏幕右沿相对水平面抬起的角度，右沿往下压时变小
-// 屏幕旋转角度：不完全信手机报的值（iPhone 上可能和预期相反，导致前倾被当成后仰），
-// 而是看重力：屏幕显示的"上方"一定是手机当前朝天的那一侧。重力不明显（手机放平）时才用报的值。
-let inferredAngle = null;
-function screenAngle() {
-  // iPhone 上 window.orientation 一直可靠，screen.orientation.angle 的方向可能和它相反，所以优先用前者
+// 屏幕旋转角度。
+// 1. 优先用手机报的值：iPhone 上 window.orientation 一直可靠，screen.orientation.angle 的方向可能和它相反
+// 2. 手机明显竖起来（离水平 30° 以上）时，用重力纠正：屏幕显示的"上方"一定是朝天的那一侧
+//    手机拿得比较平时不能用重力判断：一倾过水平，判断就会翻转 180°，前后左右全反
+// 3. 倒奶期间锁定，不会中途变
+let lockedAngle = null;
+function currentAngle() {
   const reported = typeof window.orientation === 'number' ? window.orientation
-    : (screen.orientation && screen.orientation.angle) || 0;
+    : screen.orientation ? screen.orientation.angle : null;
   const landscape = window.innerWidth > window.innerHeight;
-  if (landscape && Math.abs(reading.ux) > 0.15) inferredAngle = reading.ux > 0 ? 90 : -90;
-  else if (!landscape && Math.abs(reading.uy) > 0.15) inferredAngle = reading.uy > 0 ? 0 : 180;
-  else if (inferredAngle != null && (Math.abs(inferredAngle) === 90) !== landscape) inferredAngle = null;
-  return inferredAngle ?? reported;
+  if (landscape && Math.abs(reading.ux) > 0.5) return reading.ux > 0 ? 90 : -90;
+  if (!landscape && Math.abs(reading.uy) > 0.5) return reading.uy > 0 ? 0 : 180;
+  if (reported != null) return reported;
+  return landscape ? 90 : 0;
 }
+function screenAngle() {
+  return lockedAngle ?? currentAngle();
+}
+
+// 开始倒奶时锁定屏幕方向，倒完解锁
+export function lockScreenAngle() { lockedAngle = currentAngle(); }
+export function unlockScreenAngle() { lockedAngle = null; }
 
 export function screenTilt() {
   if (reading.ux == null) return { pitch: 0, roll: 0, angle: 0 };

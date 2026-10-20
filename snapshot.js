@@ -2,7 +2,7 @@
 // foam：游戏里最后一帧渲染好的奶泡画布（正方形）
 import { t } from './i18n.js';
 
-export function makeSnapshot(foam, { score, tier }) {
+export function makeSnapshot(foam, { score, verdict }) {
   const S = 1080;
   const cv = document.createElement('canvas');
   cv.width = cv.height = S;
@@ -11,7 +11,7 @@ export function makeSnapshot(foam, { score, tier }) {
   g.fillStyle = '#3b2418';
   g.fillRect(0, 0, S, S);
 
-  const cx = S / 2, cy = S / 2 + 60, R = S * 0.33;
+  const cx = S / 2, cy = S / 2 + 20, R = S * 0.31;
   g.save();
   g.shadowColor = 'rgba(0,0,0,0.45)';
   g.shadowBlur = R * 0.12;
@@ -33,11 +33,16 @@ export function makeSnapshot(foam, { score, tier }) {
 
   g.fillStyle = '#f6efe6';
   g.textAlign = 'center';
-  g.font = '600 64px -apple-system, "PingFang SC", sans-serif';
-  g.fillText(`${score}`, cx, 108);
-  g.font = '32px -apple-system, "PingFang SC", sans-serif';
-  g.fillStyle = 'rgba(246,239,230,0.75)';
-  g.fillText(t(TIER_KEY[tier]), cx, 156);
+  g.font = '600 72px -apple-system, "PingFang SC", sans-serif';
+  g.fillText(`${score}`, cx, 104);
+  g.font = 'italic 34px -apple-system, "PingFang SC", sans-serif';
+  g.fillStyle = 'rgba(246,239,230,0.85)';
+  g.fillText(`“${verdict}”`, cx, 154, S - 80);
+
+  // 底部挑战语
+  g.font = '600 36px -apple-system, "PingFang SC", sans-serif';
+  g.fillStyle = '#f6efe6';
+  g.fillText(t('challenge').replace('{n}', score), cx, S - 70);
 
   g.textAlign = 'right';
   g.font = '24px -apple-system, "PingFang SC", sans-serif';
@@ -47,4 +52,3 @@ export function makeSnapshot(foam, { score, tier }) {
   return cv.toDataURL('image/png');
 }
 
-const TIER_KEY = { try: 'tierTry', ok: 'tierOk', good: 'tierGood' };

@@ -15,7 +15,8 @@ export const config = {
   pitcherMilkSec: 7,      // 满流量倒多少秒把缸里的奶倒完（只影响画面）
 
   // —— 倒奶 ——
-  pourTimeLimit: 8,       // 秒
+  pourTimeLimit: 10,      // 秒（保底上限；通常先被杯子容量限制）
+  cupCapacity: 6.5,       // 杯子容量：满流量倒这么多秒就会溢出
   flowMax: 6500,          // 最大流量：每秒新增奶泡面积（格²）
   flowMinFrac: 0.02,      // 快速划动时流量降到最大值的这个比例
   flowRampMs: 120,        // 刚开始倒时流量从 0 升到满的时间
@@ -64,15 +65,15 @@ export const config = {
 
   // —— 评分（第4步）——
   scoreIouZero: 0.62,     // 和心形模板的重叠率低于这个记 0 分
-  scoreIouFull: 0.84,     // 重叠率达到这个记 100 分
+  scoreIouFull: 0.88,     // 重叠率达到这个记 100 分
   scoreTipWeight: 0.3,    // 心尖那一段的重叠率在总分里的权重
   scoreBackWeight: 0.3,   // 两瓣和凹口那一段的重叠率在总分里的权重
   scoreNotchPenalty: 0.8, // 凹口被奶泡填满时最多扣掉的比例（平底一团没有心形凹口）
   scoreNotchWidth: 0.12,  // 检查凹口的区域宽度（占心宽一半的比例）
   scoreNotchFree: 0.45,   // 凹口区域被填到这个比例以内不扣分
   scoreMinCoverage: 0.08, // 奶泡占杯面不到这个比例要按比例扣分
-  scoreOk: 40,            // 达到这个分数评价"有点像了"
-  scoreGood: 70,          // 达到这个分数评价"漂亮"
+  scoreOk: 40,            // 达到这个分数算"有点像了"档（统计用，显示的台词在 verdicts.js）
+  scoreGood: 70,          // 达到这个分数算"漂亮"档
 
   // —— 融合（压低出白之前）——
   fusionSec: 0.8,         // 先倒多久不出白（秒，按流量折算）；0 = 一倒就出白

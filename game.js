@@ -2,6 +2,7 @@ import { config } from './config.js';
 import { FoamSim } from './sim.js';
 import { Pour } from './pour.js';
 import { TiltInput } from './tilt.js';
+import { lockScreenAngle, unlockScreenAngle } from './sensors.js';
 import { drawPitcher } from './pitcher.js';
 import { scorePour } from './score.js';
 import { t } from './i18n.js';
@@ -119,7 +120,26 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   function finish() {
     state = 'done';
     drag = null;
-    onEnd(scorePour(sim));
+    unlockScreenAngle();
+    onEnd(overflowed ? { score: 0, overflow: true } : scorePour(sim));
+  }
+
+  // 杯子容量：倒进去的奶（融合 + 出白 + 收尾都算）超过容量就漫出杯沿，直接失败
+  let poured = 0;       // 已倒入量（满流量倒 1 秒 = 1）
+  let overflowed = false;
+  let spill = null;     // 溢出时杯沿上的奶渍（画面用）
+  function trackVolume(dt) {
+    poured += (pour.q / config.flowMax) * dt;
+    if (!overflowed && poured > config.cupCapacity) {
+      overflowed = true;
+      // 在杯沿上随机撒几块奶渍，偏向拉花缸那一侧
+      spill = Array.from({ length: 9 }, () => ({
+        a: Math.atan2(-fwd.y, -fwd.x) + (Math.random() - 0.5) * 2.6,
+        r: 0.06 + Math.random() * 0.1,
+        out: 1.05 + Math.random() * 0.12,
+      }));
+      finish();
+    }
   }
 
   // 拉花缸高度：融合时抬高，出白后贴近液面，收尾时再抬高；倒完移开
@@ -140,6 +160,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
       elapsed += dt;
       p.x = entry.x; p.y = entry.y;
       sim.step(dt, pour.update(dt, p.x, p.y));
+      trackVolume(dt);
     } else {
       p.x = entry.x; p.y = entry.y;
     }
@@ -156,6 +177,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
       hud = s;
       p.x = entry.x; p.y = entry.y;
       if (state === 'ready' && s.flow > 0) {
+        lockScreenAngle();
         pour.start(p.x, p.y);
         elapsed = 0;
         pulling = false;
@@ -185,7 +207,8 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
       flowScale = 1;
       const ahead = (p.x - c) * fwd.x + (p.y - c) * fwd.y;
       sim.step(dt, pour.update(dt, p.x, p.y, flowScale, lift));
-      if (ahead >= config.pullEnd * c) finish();
+      trackVolume(dt);
+      if (state === 'pouring' && ahead >= config.pullEnd * c) finish();
       return;
     }
 
@@ -195,6 +218,8 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     flowScale = s.flow;
     lift = 0;
     sim.step(dt, pour.update(dt, p.x, p.y, flowScale));
+    trackVolume(dt);
+    if (state !== 'pouring') return;
 
     if (elapsed * 1000 > config.pushIgnoreMs && s.accel > config.pushAccel) { pulling = true; pullT = 0; }
 
@@ -222,14 +247,29 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     ctx.drawImage(off, cx - R, cy - R, 2 * R, 2 * R);
     ctx.restore();
 
-    // 计时环
+    // 杯满程度环：倒得越多越满，快满时变红，提醒该收尾了
     if (state !== 'ready') {
-      const f = Math.min(1, elapsed / config.pourTimeLimit);
+      const f = Math.min(1, poured / config.cupCapacity);
       ctx.beginPath();
       ctx.arc(cx, cy, R * 1.06, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2);
-      ctx.strokeStyle = 'rgba(120,80,50,0.55)';
+      ctx.strokeStyle = f > 0.85 ? 'rgba(200,60,40,0.85)' : 'rgba(120,80,50,0.55)';
       ctx.lineWidth = R * 0.025;
       ctx.lineCap = 'round';
+      ctx.stroke();
+    }
+
+    // 溢出：奶漫过杯沿
+    if (spill) {
+      ctx.fillStyle = 'rgba(244,236,224,0.95)';
+      for (const s of spill) {
+        ctx.beginPath();
+        ctx.arc(cx + Math.cos(s.a) * R * s.out, cy + Math.sin(s.a) * R * s.out, R * s.r, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      ctx.beginPath();
+      ctx.arc(cx, cy, R * 1.0, 0, Math.PI * 2);
+      ctx.lineWidth = R * 0.08;
+      ctx.strokeStyle = 'rgba(244,236,224,0.9)';
       ctx.stroke();
     }
 
@@ -305,6 +345,10 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
       lift = 0;
       Object.assign(entry, home());
       Object.assign(pit, { height: 0.6, milk: 1, away: 0 });
+      poured = 0;
+      unlockScreenAngle();
+      overflowed = false;
+      spill = null;
       state = 'ready';
     },
   };

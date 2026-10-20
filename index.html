@@ -21,6 +21,7 @@
     <div id="result" class="result" hidden>
       <div class="score"><span id="scoreNum">0</span><span class="unit" data-i18n="points">pts</span></div>
       <p id="scoreTier" class="tier"></p>
+      <p id="bestLine" class="best"></p>
       <div class="actions">
         <button id="againBtn" type="button" data-i18n="again">Pour again</button>
         <button id="saveBtn" type="button" class="secondary" data-i18n="save">Save image</button>
@@ -56,7 +57,7 @@
     // 每次打开都给所有脚本加时间戳（用 import map 改写模块路径），保证拿到最新版。
     (function () {
       var v = Date.now();
-      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher', 'score', 'snapshot', 'analytics', 'i18n'];
+      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher', 'score', 'snapshot', 'analytics', 'i18n', 'verdicts'];
       var imports = {};
       files.forEach(function (f) { imports[new URL(f + '.js', location.href).href] = './' + f + '.js?v=' + v; });
       var map = document.createElement('script');
