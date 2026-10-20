@@ -3,6 +3,7 @@ import { FoamSim } from './sim.js';
 import { Pour } from './pour.js';
 import { TiltInput } from './tilt.js';
 import { drawPitcher } from './pitcher.js';
+import { scorePour } from './score.js';
 
 // 杯子不动，玩家移动的是拉花缸。缸嘴对准的点就是入奶点。
 // 两种操作方式：
@@ -117,7 +118,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   function finish() {
     state = 'done';
     drag = null;
-    onEnd();
+    onEnd(scorePour(sim));
   }
 
   // 拉花缸高度：融合时抬高，出白后贴近液面，收尾时再抬高；倒完移开
@@ -295,6 +296,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
 
   return {
     isTilt: mode === 'tilt',
+    foamCanvas: off, // 最后一帧渲染好的奶泡，保存图片用
     reset() {
       sim.reset();
       elapsed = 0;

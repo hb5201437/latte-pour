@@ -51,6 +51,18 @@ export const config = {
   lineMaxHalfWidth: 1.6,  // 千层纹线的最大半宽（格），被拉开的地方也保持细线
   lineStrength: 0.85,     // 千层纹颜色深浅，1 = 完全是浅咖啡色
 
+  // —— 计数 ——
+  // GoatCounter 站点代码（注册后 https://<代码>.goatcounter.com 里的 <代码>），留空则不统计
+  goatcounterCode: '',
+
+  // —— 评分（第4步）——
+  scoreIouZero: 0.62,     // 和心形模板的重叠率低于这个记 0 分
+  scoreIouFull: 0.84,     // 重叠率达到这个记 100 分
+  scoreTipWeight: 0.4,    // 心尖那一段的重叠率在总分里的权重
+  scoreMinCoverage: 0.08, // 奶泡占杯面不到这个比例要按比例扣分
+  scoreOk: 40,            // 达到这个分数评价"有点像了"
+  scoreGood: 70,          // 达到这个分数评价"漂亮"
+
   // —— 融合（压低出白之前）——
   fusionSec: 1.2,         // 先倒多久不出白（秒，按流量折算）；0 = 一倒就出白
   fusionLighten: 0.35,    // 融合结束时油脂变浅的程度

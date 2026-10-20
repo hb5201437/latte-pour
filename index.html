@@ -18,8 +18,21 @@
     <canvas id="cup"></canvas>
     <p id="hint" class="overlay-top note">按住屏幕倒奶，拖动手指移动拉花缸 · 先融合一下，出白后左右匀速晃出千层纹 · 最后快速向上一划拉出心尖</p>
     <button id="flipBtn" class="flip" type="button" hidden>倒奶方向反了？点这里</button>
-    <div id="result" class="overlay-bottom" hidden>
-      <button id="againBtn" type="button">再来一次</button>
+    <div id="result" class="result" hidden>
+      <div class="score"><span id="scoreNum">0</span><span class="unit">分</span></div>
+      <p id="scoreTier" class="tier"></p>
+      <div class="actions">
+        <button id="againBtn" type="button">再来一次</button>
+        <button id="saveBtn" type="button" class="secondary">保存图片</button>
+      </div>
+    </div>
+    <div id="savePanel" class="save-panel" hidden>
+      <img id="saveImg" alt="拉花成品图">
+      <p class="note">长按图片保存到相册</p>
+      <div class="actions">
+        <a id="saveLink" download="latte-pour.png">下载图片</a>
+        <button id="saveClose" type="button" class="secondary">关闭</button>
+      </div>
     </div>
   </main>
 
@@ -36,14 +49,14 @@
     </dl>
   </main>
 
-  <footer>第三方库：无 · <span id="build"></span></footer>
+  <footer>第三方库：无 · 统计：GoatCounter（不用 cookie） · <span id="build"></span></footer>
 
   <script>
     // GitHub Pages 让浏览器缓存脚本 10 分钟，刚部署完手机上可能还是旧版。
     // 每次打开都给所有脚本加时间戳（用 import map 改写模块路径），保证拿到最新版。
     (function () {
       var v = Date.now();
-      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher'];
+      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher', 'score', 'snapshot', 'analytics'];
       var imports = {};
       files.forEach(function (f) { imports[new URL(f + '.js', location.href).href] = './' + f + '.js?v=' + v; });
       var map = document.createElement('script');

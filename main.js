@@ -1,9 +1,11 @@
 import { reading, requestSensors } from './sensors.js';
 import { createGame } from './game.js';
 import { setTiltFlip } from './tilt.js';
+import { makeSnapshot } from './snapshot.js';
+import { count } from './analytics.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1020-r14';
+const BUILD = '1020-r15';
 
 const $ = id => document.getElementById(id);
 $('build').textContent = '版本 ' + BUILD;
@@ -28,6 +30,9 @@ const FALLBACK_NOTE = {
 };
 
 let game = null;
+let lastResult = null;
+
+count('/', 'Latte Pour');
 
 // 倒奶方向手动翻转，记在本机
 const FLIP_KEY = 'latte-pour.flipTilt';
@@ -60,13 +65,33 @@ $('startBtn').addEventListener('click', async () => {
   game = createGame($('cup'), {
     mode,
     debug: debugHud,
-    onStart: () => { $('hint').hidden = true; $('flipBtn').hidden = true; },
-    onEnd: () => { $('result').hidden = false; },
+    onStart: () => { $('hint').hidden = true; $('flipBtn').hidden = true; count('pour-start', '开始倒奶', true); },
+    onEnd: r => {
+      lastResult = r;
+      $('scoreNum').textContent = r.score;
+      $('scoreTier').textContent = r.tier;
+      $('result').hidden = false;
+      count('pour-done', '倒完一杯', true);
+      count('score-' + r.tier, '评价：' + r.tier, true);
+    },
   });
+  count('mode-' + mode, mode === 'tilt' ? '陀螺仪模式' : '手指模式', true);
   $('flipBtn').hidden = mode !== 'tilt';
 });
 
+$('saveBtn').addEventListener('click', () => {
+  if (!game || !lastResult) return;
+  const url = makeSnapshot(game.foamCanvas, lastResult);
+  $('saveImg').src = url;
+  $('saveLink').href = url;
+  $('savePanel').hidden = false;
+  count('save-image', '保存图片', true);
+});
+
+$('saveClose').addEventListener('click', () => { $('savePanel').hidden = true; });
+
 $('againBtn').addEventListener('click', () => {
+  $('savePanel').hidden = true;
   game.reset();
   $('result').hidden = true;
   $('hint').hidden = false;
