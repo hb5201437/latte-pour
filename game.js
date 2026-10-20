@@ -118,12 +118,12 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     let flowScale;
 
     if (pulling) {
-      // 穿心：奶柱自动快速往前划，pour.js 会因为往前移动快而把流量降到最低
+      // 收尾：拉花缸抬高（lift = 1），细奶柱自动往前划过图案
       p.x += fwd.x * config.tiltPullSpeed * dt;
       p.y += fwd.y * config.tiltPullSpeed * dt;
       flowScale = 1;
       const ahead = (p.x - c) * fwd.x + (p.y - c) * fwd.y;
-      sim.step(dt, pour.update(dt, p.x, p.y, flowScale));
+      sim.step(dt, pour.update(dt, p.x, p.y, flowScale, 1));
       if (ahead >= config.pullEnd * c) finish();
       return;
     }

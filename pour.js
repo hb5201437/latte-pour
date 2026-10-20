@@ -24,7 +24,8 @@ export class Pour {
   }
 
   // flowScale：额外的流量比例（陀螺仪模式下由前倾角决定，手指模式为 1）
-  update(dt, x, y, flowScale = 1) {
+  // lift：拉花缸抬起的高度 0~1，不传则按往前移动的速度推断（手指模式快速往前划 = 抬高收尾）
+  update(dt, x, y, flowScale = 1, lift = null) {
     this.elapsed += dt;
     const ivx = (x - this.px) / dt, ivy = (y - this.py) / dt;
     this.px = x; this.py = y;
@@ -44,7 +45,12 @@ export class Pour {
     const fusion = this.flowTime < config.fusionSec;
     if (!fusion) this.foamTime += dt;
     const ramp = Math.min(1, (this.foamTime * 1000) / config.flowRampMs);
-    this.q = config.flowMax * Math.max(config.flowMinFrac, 1 - drift / config.pullSpeed) * ramp * flowScale;
+    // 抬高：奶柱变细、沉下去不出白，只把两边的图案往中间压，拉出细线收尾
+    if (lift == null) {
+      const t = Math.min(1, Math.max(0, (drift / config.pullSpeed - 0.3) / 0.6));
+      lift = t * t * (3 - 2 * t);
+    }
+    this.q = config.flowMax * Math.max(config.flowMinFrac, 1 - lift) * ramp * flowScale;
 
     // 千层纹：每次晃过中线记一次。奶泡模型按这个计数在每次晃动的奶泡轮廓上画线。
     // 中线 = 横向位置的慢速平均。
@@ -68,6 +74,6 @@ export class Pour {
     const phase = (this.crossings + Math.min(0.95, (this.elapsed - this.lastCross) / this.halfPeriod)) / config.crossingsPerLine;
 
     if (fusion) this.q = config.flowMax * flowScale; // 融合阶段的流量只用来推进融合进度和画奶柱
-    return { x, y, vx: this.vx, vy: this.vy, q: this.q, phase, fusion };
+    return { x, y, vx: this.vx, vy: this.vy, q: this.q, phase, fusion, lift };
   }
 }

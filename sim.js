@@ -79,6 +79,14 @@ export class FoamSim {
     // 奶柱本身往前冲，把落点后面的咖啡卷进奶泡后缘，自然形成心形上方的凹口
     const jet = config.jetSpeed * (src.q / config.flowMax);
     const jsig2 = config.jetRadius * config.jetRadius;
+    // 抬高收尾：奶柱拖曳范围变窄，并把两侧奶泡往奶柱的路径上压
+    const lift = src.lift ?? 0;
+    const speed = Math.hypot(src.vx, src.vy);
+    const tx = speed > 1 ? src.vx / speed : fx, ty = speed > 1 ? src.vy / speed : fy;
+    const squeeze = config.liftSqueeze * lift * speed;
+    const qsig2 = config.liftSqueezeRadius * config.liftSqueezeRadius;
+    const dsig = config.dragRadius * (1 - (1 - config.liftDragNarrow) * lift);
+    const dsig2 = dsig * dsig;
 
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
@@ -94,9 +102,16 @@ export class FoamSim {
         const sdx = x - src.x, sdy = y - src.y;
         const s2 = sdx * sdx + sdy * sdy;
         if (s2 < dragCut) {
-          const g = Math.exp(-s2 / sig2) * drag;
+          const g = Math.exp(-s2 / dsig2) * drag;
           ux += src.vx * g;
           uy += src.vy * g;
+        }
+        if (squeeze > 0 && s2 < qsig2 * 4) {
+          // 离奶柱路径的横向距离，往路径方向收
+          const off = -sdx * ty + sdy * tx;
+          const g = Math.exp(-s2 / qsig2) * squeeze / config.liftSqueezeRadius;
+          ux += ty * off * g;
+          uy += -tx * off * g;
         }
         if (jet > 0 && s2 < jsig2 * 9) {
           const g = Math.exp(-s2 / jsig2) * jet;
@@ -123,7 +138,9 @@ export class FoamSim {
 
     // 奶柱落点注入新奶泡，流量小时落点也变细
     const phase = src.phase ?? 0;
-    const rIn = config.streamRadius * Math.sqrt(src.q / config.flowMax);
+    // 贴近液面时落点粗；抬高后只剩一条细线
+    const rLow = config.streamRadius * Math.sqrt(src.q / config.flowMax);
+    const rIn = rLow + (config.liftLineRadius - rLow) * lift;
     if (rIn > 0.05) {
       // 边缘按距离给部分浓度，细奶柱也是连续的线而不是一串点
       const reach = rIn + 1;

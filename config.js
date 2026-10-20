@@ -33,8 +33,8 @@ export const config = {
   pourStartBack: 0.35,    // 起倒位置：从杯心往后（远离心尖）多少个半径
   pushAccel: 9,           // 加速度峰值超过这个（m/s²）算"向前一推"
   pushIgnoreMs: 800,      // 刚开始倒的这段时间不检测推，避免前倾时的抖动误判
-  tiltPullSpeed: 520,     // 穿心时奶柱自动往前划的速度（格/秒）
-  pullEnd: 0.85,          // 划到杯心往前多少个半径处结束
+  tiltPullSpeed: 300,     // 收尾时细奶柱自动往前划的速度（格/秒）
+  pullEnd: 0.75,          // 划到杯心往前多少个半径处结束
 
   // —— 千层纹 ——
   wiggleMinSpeed: 40,     // 横向晃动速度超过这个（格/秒）才算一次有效晃动
@@ -50,14 +50,18 @@ export const config = {
 
   // —— 奶泡 ——
   forwardAngle: -Math.PI / 2, // "前方"方向（屏幕坐标，-π/2 = 朝上）。拉花缸在屏幕下方（靠近自己），图案往上长，心尖朝上
-  forwardBias: 0.8,       // 落点前方的额外推力，越大奶泡越往前长、越窄
-  backPull: 0.8,          // 落点后方的回收力，>1 时后方奶泡往回收，落点贴着奶泡后缘（穿心才拉得出凹口）
+  forwardBias: 0.1,       // 落点前方的额外推力，越大奶泡越往前长、越窄
+  backPull: 0.6,          // 落点后方的回收力，>1 时后方奶泡往回收，落点贴着奶泡后缘（穿心才拉得出凹口）
   surfaceAhead: 4,        // 白色浮出的位置在落点前方多少格
   jetSpeed: 90,           // 奶柱往前冲的速度（格/秒），把咖啡卷进奶泡后缘形成凹口
   jetRadius: 4,           // 奶柱冲力影响范围（格）
   streamRadius: 3,        // 奶柱落点注入白色的半径（格）
   dragStrength: 1.0,      // 奶柱拖着周围奶泡跟着走的强度，1 = 跟奶柱同速
   dragRadius: 11,         // 拖曳影响范围（格）
+  liftDragNarrow: 0.7,    // 抬高收尾时拖曳范围缩到原来的这个比例
+  liftSqueeze: 2.5,       // 抬高收尾时把两侧奶泡往中线压的强度
+  liftSqueezeRadius: 40,  // 往中线压的影响范围（格）
+  liftLineRadius: 0.6,    // 抬高后奶柱留下的细线半径（格）
   maxStepCells: 4,        // 每帧最大位移，防止数值炸开
   foamAgeRate: 0.15,      // 旧奶泡变成奶油色的速度，新旧交界会显出纹路
   foamFloor: 0.62,        // 旧奶泡最低浓度

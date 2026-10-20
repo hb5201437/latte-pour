@@ -2,7 +2,7 @@ import { reading, requestSensors } from './sensors.js';
 import { createGame } from './game.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1020-r9';
+const BUILD = '1020-r10';
 
 const $ = id => document.getElementById(id);
 $('build').textContent = '版本 ' + BUILD;
