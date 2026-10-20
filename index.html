@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -10,28 +10,28 @@
 <body>
   <main id="start" class="screen">
     <h1>Latte Pour</h1>
-    <button id="startBtn" type="button">开始倒奶</button>
+    <button id="startBtn" type="button" data-i18n="start">Start pouring</button>
     <p id="startNote" class="note"></p>
   </main>
 
   <main id="play" class="screen" hidden>
     <canvas id="cup"></canvas>
-    <p id="hint" class="overlay-top note">按住屏幕倒奶，拖动手指移动拉花缸 · 先融合一下，出白后左右匀速晃出千层纹 · 最后快速向上一划拉出心尖</p>
-    <button id="flipBtn" class="flip" type="button" hidden>倒奶方向反了？点这里</button>
+    <p id="hint" class="overlay-top note"></p>
+    <button id="flipBtn" class="flip" type="button" hidden></button>
     <div id="result" class="result" hidden>
-      <div class="score"><span id="scoreNum">0</span><span class="unit">分</span></div>
+      <div class="score"><span id="scoreNum">0</span><span class="unit" data-i18n="points">pts</span></div>
       <p id="scoreTier" class="tier"></p>
       <div class="actions">
-        <button id="againBtn" type="button">再来一次</button>
-        <button id="saveBtn" type="button" class="secondary">保存图片</button>
+        <button id="againBtn" type="button" data-i18n="again">Pour again</button>
+        <button id="saveBtn" type="button" class="secondary" data-i18n="save">Save image</button>
       </div>
     </div>
     <div id="savePanel" class="save-panel" hidden>
-      <img id="saveImg" alt="拉花成品图">
-      <p class="note">长按图片保存到相册</p>
+      <img id="saveImg" alt="Latte art">
+      <p class="note" data-i18n="saveHint">Long-press the image to save it</p>
       <div class="actions">
-        <a id="saveLink" download="latte-pour.png">下载图片</a>
-        <button id="saveClose" type="button" class="secondary">关闭</button>
+        <a id="saveLink" download="latte-pour.png" data-i18n="download">Download image</a>
+        <button id="saveClose" type="button" class="secondary" data-i18n="close">Close</button>
       </div>
     </div>
   </main>
@@ -49,14 +49,14 @@
     </dl>
   </main>
 
-  <footer>第三方库：无 · 统计：GoatCounter（不用 cookie） · <span id="build"></span></footer>
+  <footer><span data-i18n="footer">Third-party code: none · Stats: GoatCounter (no cookies)</span> · <span id="build"></span></footer>
 
   <script>
     // GitHub Pages 让浏览器缓存脚本 10 分钟，刚部署完手机上可能还是旧版。
     // 每次打开都给所有脚本加时间戳（用 import map 改写模块路径），保证拿到最新版。
     (function () {
       var v = Date.now();
-      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher', 'score', 'snapshot', 'analytics'];
+      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher', 'score', 'snapshot', 'analytics', 'i18n'];
       var imports = {};
       files.forEach(function (f) { imports[new URL(f + '.js', location.href).href] = './' + f + '.js?v=' + v; });
       var map = document.createElement('script');

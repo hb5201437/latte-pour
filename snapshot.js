@@ -1,5 +1,7 @@
 // 生成分享用的成品图：杯子 + 奶泡 + 分数，右下角小字署名和网址。
 // foam：游戏里最后一帧渲染好的奶泡画布（正方形）
+import { t } from './i18n.js';
+
 export function makeSnapshot(foam, { score, tier }) {
   const S = 1080;
   const cv = document.createElement('canvas');
@@ -35,7 +37,7 @@ export function makeSnapshot(foam, { score, tier }) {
   g.fillText(`${score}`, cx, 108);
   g.font = '32px -apple-system, "PingFang SC", sans-serif';
   g.fillStyle = 'rgba(246,239,230,0.75)';
-  g.fillText(tier, cx, 156);
+  g.fillText(t(TIER_KEY[tier]), cx, 156);
 
   g.textAlign = 'right';
   g.font = '24px -apple-system, "PingFang SC", sans-serif';
@@ -44,3 +46,5 @@ export function makeSnapshot(foam, { score, tier }) {
 
   return cv.toDataURL('image/png');
 }
+
+const TIER_KEY = { try: 'tierTry', ok: 'tierOk', good: 'tierGood' };

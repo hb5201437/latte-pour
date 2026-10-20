@@ -4,6 +4,7 @@ import { Pour } from './pour.js';
 import { TiltInput } from './tilt.js';
 import { drawPitcher } from './pitcher.js';
 import { scorePour } from './score.js';
+import { t } from './i18n.js';
 
 // 杯子不动，玩家移动的是拉花缸。缸嘴对准的点就是入奶点。
 // 两种操作方式：
@@ -261,7 +262,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     // 当前操作模式，常驻在左下角
     ctx.font = '12px -apple-system, sans-serif';
     ctx.fillStyle = 'rgba(246,239,230,0.45)';
-    ctx.fillText(mode === 'tilt' ? '陀螺仪模式' : '手指模式', 12, H - 14);
+    ctx.fillText(t(mode === 'tilt' ? 'modeTilt' : 'modeTouch'), 12, H - 14);
 
     // ?debug=1 时显示陀螺仪读数，调手感用
     if (debug && hud) {

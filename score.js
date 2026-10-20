@@ -113,4 +113,5 @@ export function scorePour(sim) {
   return { score, tier, iou: +iou.toFixed(3), coverage: +coverage.toFixed(3), notchFill: +notchFill.toFixed(2) };
 }
 
-const TIERS = ['再试试', '有点像了', '漂亮'];
+// 评价档位（文案在 i18n.js）
+const TIERS = ['try', 'ok', 'good'];

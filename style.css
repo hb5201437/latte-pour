@@ -128,3 +128,4 @@ button.secondary {
 }
 .save-panel img { max-width: min(100%, 520px); max-height: 70vh; border-radius: 8px; -webkit-touch-callout: default; user-select: auto; }
 .save-panel a { color: var(--foam); }
+.actions button { white-space: nowrap; padding: 12px 22px; font-size: 1.05rem; }
