@@ -29,7 +29,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   // 陀螺仪模式状态
   const tiltIn = mode === 'tilt' ? new TiltInput() : null;
   const fwd = { x: Math.cos(config.forwardAngle), y: Math.sin(config.forwardAngle) };
-  const lat = { x: -fwd.y, y: fwd.x }; // 横向（forward 朝上时为屏幕向右）
+  const lat = { x: fwd.y, y: -fwd.x }; // 横向（forward 朝下时为屏幕向右）
   let pulling = false;
   let lowFor = 0;
   let hud = null; // 调试读数

@@ -12,6 +12,8 @@ export class Pour {
     this.vx = this.vy = 0;   // 平滑后的瞬时速度
     this.dx = this.dy = 0;   // 平滑后的"净移动"速度
     this.elapsed = 0;
+    this.flowTime = 0;       // 实际在出奶的累计时间（融合阶段用）
+    this.foamTime = 0;       // 出白以后的时间
     this.q = 0;
     this.side = 0;           // 当前在中线哪一侧 -1 / 1
     this.peak = 0;           // 本次晃动的最大横向速度
@@ -37,7 +39,11 @@ export class Pour {
     // 原地、左右晃、往回收都保持满流量
     const fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
     const drift = Math.max(0, this.dx * fx + this.dy * fy);
-    const ramp = Math.min(1, (this.elapsed * 1000) / config.flowRampMs);
+    // 融合：先倒一段时间不出白
+    if (flowScale > 0) this.flowTime += dt * flowScale;
+    const fusion = this.flowTime < config.fusionSec;
+    if (!fusion) this.foamTime += dt;
+    const ramp = Math.min(1, (this.foamTime * 1000) / config.flowRampMs);
     this.q = config.flowMax * Math.max(config.flowMinFrac, 1 - drift / config.pullSpeed) * ramp * flowScale;
 
     // 千层纹：每次晃过中线记一次。奶泡模型按这个计数在每次晃动的奶泡轮廓上画线。
@@ -61,6 +67,7 @@ export class Pour {
     // 两次过中线之间按时间插值，让相位连续；不晃了就停在接近下一个整数处，不再出新线
     const phase = (this.crossings + Math.min(0.95, (this.elapsed - this.lastCross) / this.halfPeriod)) / config.crossingsPerLine;
 
-    return { x, y, vx: this.vx, vy: this.vy, q: this.q, phase };
+    if (fusion) this.q = config.flowMax * flowScale; // 融合阶段的流量只用来推进融合进度和画奶柱
+    return { x, y, vx: this.vx, vy: this.vy, q: this.q, phase, fusion };
   }
 }
