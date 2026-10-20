@@ -16,7 +16,7 @@
 
   <main id="play" class="screen" hidden>
     <canvas id="cup"></canvas>
-    <p id="hint" class="overlay-top note">在杯子下半部按住倒奶 · 先融合一下，出白后左右匀速晃出千层纹 · 最后快速向上一划拉出心尖</p>
+    <p id="hint" class="overlay-top note">按住屏幕倒奶，拖动手指移动拉花缸 · 先融合一下，出白后左右匀速晃出千层纹 · 最后快速向上一划拉出心尖</p>
     <div id="result" class="overlay-bottom" hidden>
       <button id="againBtn" type="button">再来一次</button>
     </div>
@@ -42,7 +42,7 @@
     // 每次打开都给所有脚本加时间戳（用 import map 改写模块路径），保证拿到最新版。
     (function () {
       var v = Date.now();
-      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt'];
+      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher'];
       var imports = {};
       files.forEach(function (f) { imports[new URL(f + '.js', location.href).href] = './' + f + '.js?v=' + v; });
       var map = document.createElement('script');

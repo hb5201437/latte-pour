@@ -32,6 +32,12 @@ export class FoamSim {
       }
     }
     this.buildCrema();
+    // 杯壁暗角，直接算进渲染（比每帧画一层渐变省很多）
+    this.vig = new Float32Array(n * n);
+    for (let i = 0; i < n * n; i++) {
+      const r = Math.hypot((i % n) - c, ((i / n) | 0) - c) / R;
+      this.vig[i] = 1 - 0.22 * smoothstep(0.8, 1, r);
+    }
   }
 
   reset() {
@@ -228,7 +234,7 @@ export class FoamSim {
 
   // 写入 RGBA 像素（长度 n*n*4）
   render(out) {
-    const { n, d, p, bg } = this;
+    const { n, d, p, bg, vig } = this;
     const { edgeLo, edgeHi, haloLo, haloStrength, foamFloor, lineFrac, lineStrength } = config;
     // 融合让油脂变浅，入点附近最明显
     const fu0 = this.fusion * config.fusionLighten;
@@ -275,9 +281,10 @@ export class FoamSim {
       }
       fr += (190 - fr) * la; fg += (128 - fg) * la; fb += (78 - fb) * la;
       const j = i * 4;
-      out[j] = br + (fr - br) * a;
-      out[j + 1] = bgc + (fg - bgc) * a;
-      out[j + 2] = bb + (fb - bb) * a;
+      const vg = vig[i];
+      out[j] = (br + (fr - br) * a) * vg;
+      out[j + 1] = (bgc + (fg - bgc) * a) * vg;
+      out[j + 2] = (bb + (fb - bb) * a) * vg;
       out[j + 3] = 255;
     }
   }

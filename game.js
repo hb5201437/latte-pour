@@ -2,11 +2,14 @@ import { config } from './config.js';
 import { FoamSim } from './sim.js';
 import { Pour } from './pour.js';
 import { TiltInput } from './tilt.js';
+import { drawPitcher } from './pitcher.js';
 
+// 杯子不动，玩家移动的是拉花缸。缸嘴对准的点就是入奶点。
 // 两种操作方式：
-//   tilt（陀螺仪）：手指点杯子选入点（倒的时候也能拖）；前倾 = 倒奶，倾角越大流量越大；
-//                   左右晃 = 奶柱横向晃；向前一推 = 抬高收尾；收回端平 = 倒完
-//   touch（手指）： 按住 = 倒奶，倒奶点跟着手指走；快速往前划 = 穿心；松手 = 倒完
+//   tilt（陀螺仪）：手指按住任意位置拖 = 平移拉花缸（倒的时候也能拖着往后退）；
+//                   前倾 = 倒奶，倾角越大流量越大；左右晃 = 拉花缸横向晃；
+//                   向前一推 = 抬高收尾；收回端平 = 倒完
+//   touch（手指）： 按住 = 倒奶，拖动 = 平移拉花缸；快速往前划 = 抬高收尾；松手 = 倒完
 // 流量、穿心降流量、千层纹的规则在 pour.js，两种方式共用。
 export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   const ctx = canvas.getContext('2d');
@@ -18,6 +21,8 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   const img = offCtx.createImageData(n, n);
 
   let W = 0, H = 0, dpr = 1, cx = 0, cy = 0, R = 0;
+  const rim = document.createElement('canvas');
+  let rimPad = 0;
   let state = 'ready'; // ready | pouring | done
   let elapsed = 0;
   let last = 0;
@@ -37,10 +42,14 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   let hud = null; // 调试读数
   let accelShow = 0;
   let fps = 60;
-  let lift = 0; // 当前抬高程度，画奶柱粗细用
-  // 入点：陀螺仪模式下用手指选，默认在杯心后方
+  let frameMs = 0; // 每帧计算+绘制耗时
+  let lift = 0; // 当前抬高程度
+  // 拉花缸位置（缸嘴对准的入点，格坐标），默认在杯心后方
   const c0 = n / 2;
-  const entry = { x: c0 - fwd.x * config.pourStartBack * c0, y: c0 - fwd.y * config.pourStartBack * c0 };
+  const home = () => ({ x: c0 - fwd.x * config.pourStartBack * c0, y: c0 - fwd.y * config.pourStartBack * c0 });
+  const entry = home();
+  // 拉花缸的画面状态
+  const pit = { height: 0.6, milk: 1, away: 0 };
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, config.maxDpr);
@@ -50,60 +59,90 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     canvas.height = Math.round(H * dpr);
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
+    // 杯子上方留杯沿，下方留出拉花缸（缸身 + 把手）的位置
+    const above = 1.14, below = 1.75;
+    R = Math.min(W * config.cupRadiusFrac, (H - 24) / (above + below));
     cx = W / 2;
-    cy = H / 2;
-    R = Math.min(W, H) * config.cupRadiusFrac;
+    cy = (H - (above + below) * R) / 2 + above * R;
+
+    // 杯沿和它的阴影是静止的，布局变化时画一次，之后每帧直接贴图
+    const pad = R * 1.4;
+    rim.width = Math.ceil(2 * pad * dpr);
+    rim.height = Math.ceil(2 * pad * dpr);
+    const rc = rim.getContext('2d');
+    rc.setTransform(dpr, 0, 0, dpr, 0, 0);
+    rc.shadowColor = 'rgba(0,0,0,0.45)';
+    rc.shadowBlur = R * 0.12;
+    rc.shadowOffsetY = R * 0.04;
+    rc.beginPath();
+    rc.arc(pad, pad, R * 1.12, 0, Math.PI * 2);
+    rc.fillStyle = '#efe8df';
+    rc.fill();
+    rimPad = pad;
   }
 
-  function toGrid(e) {
-    let gx = ((e.clientX - (cx - R)) / (2 * R)) * n;
-    let gy = ((e.clientY - (cy - R)) / (2 * R)) * n;
-    // 限制在杯口内
+  // 限制在杯口内
+  function clampToCup(gx, gy) {
     const c = n / 2, dx = gx - c, dy = gy - c, r = Math.hypot(dx, dy), max = n / 2 - 2;
-    if (r > max) { gx = c + (dx * max) / r; gy = c + (dy * max) / r; }
-    return [gx, gy];
+    return r > max ? [c + (dx * max) / r, c + (dy * max) / r] : [gx, gy];
   }
 
-  // 陀螺仪模式：点或拖动选入点
-  const pickEntry = e => {
-    if (mode !== 'tilt' || pulling || state === 'done') return;
-    if (e.type === 'pointermove' && !e.buttons && e.pointerType === 'mouse') return;
-    [entry.x, entry.y] = toGrid(e);
-  };
-  canvas.addEventListener('pointerdown', pickEntry);
-  canvas.addEventListener('pointermove', pickEntry);
-
+  // 拖拉花缸：手指按住任意位置拖，拉花缸跟着平移（相对移动，手指不会挡住入奶点）
+  let drag = null;
   canvas.addEventListener('pointerdown', e => {
-    if (mode !== 'touch' || state !== 'ready') return;
-    canvas.setPointerCapture(e.pointerId);
-    [p.x, p.y] = toGrid(e);
-    pour.start(p.x, p.y);
-    elapsed = 0;
-    state = 'pouring';
-    onStart();
+    if (state === 'done' || pulling || drag) return;
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* 个别浏览器不支持时照样能拖 */ }
+    drag = { id: e.pointerId, x: e.clientX, y: e.clientY, ex: entry.x, ey: entry.y };
+    if (mode === 'touch' && state === 'ready') {
+      p.x = entry.x; p.y = entry.y;
+      pour.start(p.x, p.y);
+      elapsed = 0;
+      state = 'pouring';
+      onStart();
+    }
   });
-
   canvas.addEventListener('pointermove', e => {
-    if (mode !== 'touch' || state !== 'pouring') return;
-    [p.x, p.y] = toGrid(e);
+    if (!drag || e.pointerId !== drag.id || state === 'done' || pulling) return;
+    const k = n / (2 * R);
+    [entry.x, entry.y] = clampToCup(drag.ex + (e.clientX - drag.x) * k, drag.ey + (e.clientY - drag.y) * k);
   });
-
-  const stop = () => { if (mode === 'touch' && state === 'pouring') finish(); };
-  canvas.addEventListener('pointerup', stop);
-  canvas.addEventListener('pointercancel', stop);
+  const release = e => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag = null;
+    if (mode === 'touch' && state === 'pouring') finish();
+  };
+  canvas.addEventListener('pointerup', release);
+  canvas.addEventListener('pointercancel', release);
 
   function finish() {
     state = 'done';
+    drag = null;
     onEnd();
+  }
+
+  // 拉花缸高度：融合时抬高，出白后贴近液面，收尾时再抬高；倒完移开
+  function updatePitcher(dt) {
+    let target = 0.6;
+    if (state === 'pouring') {
+      if (pour.flowTime < config.fusionSec) target = 1;
+      else target = 0.12 + 0.88 * Math.max(lift, pour.lift || 0);
+      pit.milk = Math.max(0, pit.milk - (pour.q / config.flowMax) * dt / config.pitcherMilkSec);
+    }
+    if (state === 'done') { target = 1; pit.away = Math.min(1, pit.away + dt / 0.7); }
+    pit.height += (target - pit.height) * (1 - Math.exp(-dt / 0.15));
   }
 
   function update(dt) {
     if (mode === 'tilt') updateTilt(dt);
     else if (state === 'pouring') {
       elapsed += dt;
+      p.x = entry.x; p.y = entry.y;
       sim.step(dt, pour.update(dt, p.x, p.y));
+    } else {
+      p.x = entry.x; p.y = entry.y;
     }
     if (state === 'pouring' && elapsed >= config.pourTimeLimit) finish();
+    updatePitcher(dt);
   }
 
   function updateTilt(dt) {
@@ -163,16 +202,8 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, W, H);
 
-    // 杯沿
-    ctx.save();
-    ctx.shadowColor = 'rgba(0,0,0,0.45)';
-    ctx.shadowBlur = R * 0.12;
-    ctx.shadowOffsetY = R * 0.04;
-    ctx.beginPath();
-    ctx.arc(cx, cy, R * 1.12, 0, Math.PI * 2);
-    ctx.fillStyle = '#efe8df';
-    ctx.fill();
-    ctx.restore();
+    // 杯沿（预先画好的）
+    ctx.drawImage(rim, cx - rimPad, cy - rimPad, 2 * rimPad, 2 * rimPad);
 
     // 液面
     sim.render(img.data);
@@ -181,14 +212,10 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     ctx.beginPath();
     ctx.arc(cx, cy, R, 0, Math.PI * 2);
     ctx.clip();
+    // 奶泡边缘已经抗锯齿过，普通双线性放大就够，比"最高质量"快十几倍
     ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'high';
+    ctx.imageSmoothingQuality = 'low';
     ctx.drawImage(off, cx - R, cy - R, 2 * R, 2 * R);
-    const shade = ctx.createRadialGradient(cx, cy, R * 0.8, cx, cy, R);
-    shade.addColorStop(0, 'rgba(0,0,0,0)');
-    shade.addColorStop(1, 'rgba(0,0,0,0.22)');
-    ctx.fillStyle = shade;
-    ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R);
     ctx.restore();
 
     // 计时环
@@ -204,40 +231,29 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
 
     const toScreen = (gx, gy) => [cx - R + (gx / n) * 2 * R, cy - R + (gy / n) * 2 * R];
 
-    // 入点标记（陀螺仪模式，还没开始倒）
-    if (mode === 'tilt' && state === 'ready') {
-      const [ex, ey] = toScreen(entry.x, entry.y);
+    // 入点：拉花缸还没倒时，在液面上标出缸嘴对准的位置
+    const [sx, sy] = toScreen(p.x, p.y);
+    if (state === 'ready') {
       ctx.beginPath();
-      ctx.arc(ex, ey, R * 0.06, 0, Math.PI * 2);
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.setLineDash([]);
+      ctx.arc(sx, sy, Math.max(2, R * 0.018), 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.fill();
     }
 
-    // 奶柱：从拉花缸那一侧的屏幕边缘落到入点，越粗流量越大，抬高后变细
-    if (state === 'pouring') {
-      const [sx, sy] = toScreen(p.x, p.y);
-      const flow = mode === 'tilt' ? (hud ? hud.flow : 0) : 1;
-      const w = (2 + 10 * Math.sqrt(flow)) * (1 - 0.75 * Math.max(lift, pour.lift || 0)) * (R / 150);
-      if (w > 0.3) {
-        const ox = sx - fwd.x * R * 1.6, oy = sy - fwd.y * R * 1.6;
-        const nx = lat.x, ny = lat.y;
-        const grad = ctx.createLinearGradient(ox, oy, sx, sy);
-        grad.addColorStop(0, 'rgba(250,247,240,0)');
-        grad.addColorStop(0.35, 'rgba(250,247,240,0.85)');
-        grad.addColorStop(1, 'rgba(250,247,240,0.95)');
-        ctx.beginPath();
-        ctx.moveTo(ox + nx * w, oy + ny * w);
-        ctx.lineTo(sx + nx * w * 0.5, sy + ny * w * 0.5);
-        ctx.lineTo(sx - nx * w * 0.5, sy - ny * w * 0.5);
-        ctx.lineTo(ox - nx * w, oy - ny * w);
-        ctx.closePath();
-        ctx.fillStyle = grad;
-        ctx.fill();
-      }
-    }
+    // 拉花缸：奶柱越粗流量越大，抬高后变细；倒完往后移开
+    const flow = state !== 'pouring' ? 0 : mode === 'tilt' ? (hud ? hud.flow : 0) : 1;
+    const thin = 1 - 0.75 * Math.max(lift, pour.lift || 0);
+    const away = pit.away * pit.away;
+    drawPitcher(ctx, {
+      tipX: sx - fwd.x * away * R * 1.5, tipY: sy - fwd.y * away * R * 1.5,
+      fwd, lat,
+      size: R * config.pitcherSize,
+      height: pit.height,
+      tilt: flow,
+      milk: pit.milk,
+      stream: flow > 0 ? (1.5 + 7 * Math.sqrt(flow)) * thin * (R / 150) : 0,
+      alpha: 1 - away,
+    });
 
     // ?debug=1 时显示陀螺仪读数，调手感用
     if (debug && hud) {
@@ -247,7 +263,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
         `前倾 ${hud.tilt.toFixed(1)}°  (起倒 ${config.tiltStart}° / 满 ${config.tiltFull}°)`,
         `左右 ${hud.roll.toFixed(1)}°  横移 ${hud.lateral.toFixed(1)} 格`,
         `流量 ${(pour.q / config.flowMax * 100).toFixed(0)}%  加速度峰值 ${accelShow.toFixed(1)} (推 >${config.pushAccel})`,
-        `状态 ${state}${pulling ? ' · 收尾' : ''}  帧率 ${fps.toFixed(0)}`,
+        `状态 ${state}${pulling ? ' · 收尾' : ''}  帧率 ${fps.toFixed(0)}  每帧耗时 ${frameMs.toFixed(1)}ms`,
         `屏幕角度 screen=${screen.orientation ? screen.orientation.angle : '无'} window=${window.orientation ?? '无'}`,
       ];
       lines.forEach((t, i) => ctx.fillText(t, 12, 24 + i * 16));
@@ -259,8 +275,10 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     const dt = Math.min(0.033, raw);
     last = now;
     fps += (1 / Math.max(raw, 0.001) - fps) * 0.05;
+    const t0 = performance.now();
     update(dt);
     draw();
+    frameMs += (performance.now() - t0 - frameMs) * 0.05;
     requestAnimationFrame(frame);
   }
 
@@ -274,6 +292,8 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
       elapsed = 0;
       pulling = false;
       lift = 0;
+      Object.assign(entry, home());
+      Object.assign(pit, { height: 0.6, milk: 1, away: 0 });
       state = 'ready';
     },
   };
