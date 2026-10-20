@@ -6,9 +6,11 @@ import { count } from './analytics.js';
 import { t, applyStatic, lang } from './i18n.js';
 import { verdict } from './verdicts.js';
 import { initAudio, isMuted, setMuted, resultSound } from './audio.js';
+import { PATTERNS, patternById } from './patterns.js';
+import { renderDemo } from './demos.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1021-r25';
+const BUILD = '1021-r26';
 
 const $ = id => document.getElementById(id);
 applyStatic();
@@ -25,10 +27,53 @@ const forceTouch = params.get('mode') === 'touch';
 
 const HINTS = { tilt: t('hintTilt'), touch: t('hintTouch') };
 const FALLBACK_NOTE = { denied: t('fallbackDenied'), unsupported: t('fallbackUnsupported') };
-// 本机最高分
-const BEST_KEY = 'latte-pour.best';
-let best = 0;
-try { best = Number(localStorage.getItem(BEST_KEY)) || 0; } catch { /* 读不到就从 0 开始 */ }
+// 本机最高分（每个图案分开记）
+const bestKey = id => 'latte-pour.best.' + id;
+const getBest = id => { try { return Number(localStorage.getItem(bestKey(id))) || 0; } catch { return 0; } };
+const setBest = (id, v) => { try { localStorage.setItem(bestKey(id), String(v)); } catch { /* 忽略 */ } };
+
+// 当前图案（记在本机）
+const PATTERN_KEY = 'latte-pour.pattern';
+let pattern = PATTERNS[0];
+try { pattern = patternById(localStorage.getItem(PATTERN_KEY)); } catch { /* 用默认 */ }
+const demoUrls = {};
+
+// 开始页的图案卡片
+function buildPicker() {
+  const box = $('patterns');
+  box.innerHTML = '';
+  for (const p of PATTERNS) {
+    const card = document.createElement('button');
+    card.type = 'button';
+    card.className = 'pcard' + (p.locked ? ' locked' : '') + (p.id === pattern.id ? ' on' : '');
+    card.disabled = !!p.locked;
+    const best = p.locked ? '' : getBest(p.id);
+    card.innerHTML = `<span class="thumb"${demoUrls[p.id] ? ` style="background-image:url(${demoUrls[p.id]})"` : ''}></span>
+      <span class="pname">${p.name ? p.name[lang] || p.name.en : ''}</span>
+      <span class="pbest">${p.locked ? t('comingSoon') : best ? t('best') + ' ' + best : '—'}</span>`;
+    if (!p.locked) card.addEventListener('click', () => {
+      pattern = p;
+      try { localStorage.setItem(PATTERN_KEY, p.id); } catch { /* 忽略 */ }
+      buildPicker();
+    });
+    box.appendChild(card);
+  }
+  $('patternHint').textContent = pattern.hint[lang] || pattern.hint.en;
+}
+buildPicker();
+// 示范图在后台慢慢生成，生成一张刷新一次
+(async () => {
+  for (const p of PATTERNS) {
+    if (p.locked || !p.demo) continue;
+    demoUrls[p.id] = await renderDemo(p, BUILD);
+    buildPicker();
+  }
+})();
+
+function showTargetBadge() {
+  $('targetName').textContent = pattern.name[lang] || pattern.name.en;
+  $('targetThumb').style.backgroundImage = demoUrls[pattern.id] ? `url(${demoUrls[pattern.id]})` : '';
+}
 
 let game = null;
 let lastResult = null;
@@ -52,8 +97,19 @@ $('flipBtn').addEventListener('click', () => {
 
 $('startBtn').addEventListener('click', async () => {
   if (debugSensors) return startSensorReadout();
-  if (game) return;
   initAudio(); // iOS 要求在点击里启动声音
+  count('pattern-' + pattern.id, 'Pattern: ' + pattern.id, true);
+  if (game) {
+    // 从"换图案"回来：传感器已经连好，直接开始
+    game.setPattern(pattern);
+    game.reset();
+    show('play');
+    showTargetBadge();
+    $('result').hidden = true;
+    $('hint').hidden = false;
+    $('flipBtn').hidden = !game.isTilt;
+    return;
+  }
 
   $('startBtn').disabled = true;
   $('startNote').textContent = t('connecting');
@@ -62,21 +118,21 @@ $('startBtn').addEventListener('click', async () => {
   const mode = result === 'granted' ? 'tilt' : 'touch';
 
   show('play');
+  showTargetBadge();
   $('hint').textContent = (FALLBACK_NOTE[result] || '') + HINTS[mode];
   $('hint').hidden = false;
   $('result').hidden = true;
   game = createGame($('cup'), {
     mode,
+    pattern,
     debug: debugHud,
     onStart: () => { $('hint').hidden = true; $('flipBtn').hidden = true; count('pour-start', 'Pour started', true); },
     onEnd: r => {
       const v = verdict(r.score, r.overflow);
+      let best = getBest(pattern.id);
       const newBest = !r.overflow && r.score > best;
-      if (newBest) {
-        best = r.score;
-        try { localStorage.setItem(BEST_KEY, String(best)); } catch { /* 忽略 */ }
-      }
-      lastResult = { ...r, verdict: v.text, best };
+      if (newBest) { best = r.score; setBest(pattern.id, best); }
+      lastResult = { ...r, verdict: v.text, best, patternName: pattern.name[lang] || pattern.name.en };
       $('scoreNum').textContent = r.score;
       $('scoreTier').textContent = v.text;
       $('bestLine').textContent = newBest ? t('newBest') : t('best') + ' ' + best;
@@ -92,6 +148,7 @@ $('startBtn').addEventListener('click', async () => {
       const nth = poursThisVisit >= 5 ? '5+' : String(poursThisVisit);
       count('pour-' + nth, `Pour #${nth} this visit`, true);
       count('score-' + v.key, 'Verdict tier: ' + v.key, true);
+      count(`score-${pattern.id}-${v.key}`, `${pattern.id} verdict: ${v.key}`, true);
     },
   });
   count('mode-' + mode, mode === 'tilt' ? 'Motion controls' : 'Finger controls', true);
@@ -117,6 +174,15 @@ const muteLabel = () => {
 };
 muteLabel();
 $('muteBtn').addEventListener('click', () => { initAudio(); setMuted(!isMuted()); muteLabel(); });
+
+// 换图案：回到开始页挑
+$('patternsBtn').addEventListener('click', () => {
+  $('savePanel').hidden = true;
+  $('startBtn').disabled = false;
+  $('startNote').textContent = '';
+  buildPicker();
+  show('start');
+});
 
 $('againBtn').addEventListener('click', () => {
   initAudio();

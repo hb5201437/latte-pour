@@ -16,7 +16,8 @@ import { t } from './i18n.js';
 //                   向前一推 = 抬高收尾；收回端平 = 倒完
 //   touch（手指）： 按住 = 倒奶，拖动 = 平移拉花缸；快速往前划 = 抬高收尾；松手 = 倒完
 // 流量、穿心降流量、千层纹的规则在 pour.js，两种方式共用。
-export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
+export function createGame(canvas, { mode, pattern: initialPattern, onStart, onEnd, debug = false }) {
+  let pattern = initialPattern;
   const ctx = canvas.getContext('2d');
   const n = config.gridSize;
   const sim = new FoamSim(n);
@@ -52,7 +53,11 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   let lift = 0; // 当前抬高程度
   // 拉花缸位置（缸嘴对准的入点，格坐标），默认在杯心后方
   const c0 = n / 2;
-  const home = () => ({ x: c0 - fwd.x * config.pourStartBack * c0, y: c0 - fwd.y * config.pourStartBack * c0 });
+  // 默认入点：每个图案不一样（树叶要边摇边往后退，入点靠前）
+  const home = () => {
+    const back = pattern.startBack ?? config.pourStartBack;
+    return { x: c0 - fwd.x * back * c0, y: c0 - fwd.y * back * c0 };
+  };
   const entry = home();
   // 拉花缸的画面状态
   const pit = { height: 0.6, milk: 1, away: 0, rock: 0 };
@@ -123,7 +128,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     state = 'done';
     drag = null;
     unlockScreenAngle();
-    onEnd(overflowed ? { score: 0, overflow: true } : scorePour(sim));
+    onEnd(overflowed ? { score: 0, overflow: true } : scorePour(sim, pattern));
   }
 
   // 杯子容量：倒进去的奶（融合 + 出白 + 收尾都算）超过容量就漫出杯沿，直接失败
@@ -360,6 +365,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
 
   return {
     isTilt: mode === 'tilt',
+    setPattern(p) { pattern = p; },
     foamCanvas: off, // 最后一帧渲染好的奶泡，保存图片用
     reset() {
       sim.reset();

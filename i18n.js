@@ -25,6 +25,8 @@ const STRINGS = {
     best: 'Best:',
     newBest: 'New best!',
     challenge: 'Can you beat {n}?',
+    patterns: 'Try another pattern',
+    comingSoon: 'Coming soon',
   },
   zh: {
     title: 'Latte Pour',
@@ -51,6 +53,8 @@ const STRINGS = {
     best: '最高分',
     newBest: '新纪录！',
     challenge: '你能超过 {n} 分吗？',
+    patterns: '换个图案',
+    comingSoon: '即将推出',
   },
 };
 

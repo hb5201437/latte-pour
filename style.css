@@ -191,3 +191,37 @@ button:active { transform: scale(0.97); }
 .mute.off .cross { display: inline; }
 .mute.off .wave { display: none; }
 #hint { padding-right: 44px; }
+
+/* —— 图案挑战 —— */
+.patterns { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; max-width: 360px; }
+.pcard {
+  width: 78px; padding: 8px 4px 6px;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  border-radius: 14px;
+  background: rgba(246, 239, 230, 0.06);
+  border: 1px solid rgba(246, 239, 230, 0.14);
+  color: var(--foam);
+  font-size: 0.8rem;
+  box-shadow: none;
+}
+.pcard.on { background: rgba(246, 239, 230, 0.16); border-color: var(--gold); }
+.pcard.locked { opacity: 0.45; }
+.pcard .thumb, .target .thumb {
+  width: 54px; height: 54px; border-radius: 50%;
+  background: radial-gradient(circle, #8a5534 0 60%, #f1ebe3 62%);
+  background-size: cover; background-position: center;
+  box-shadow: 0 0 0 3px #efe8df, 0 6px 14px rgba(0, 0, 0, 0.4);
+}
+.pcard.locked .thumb { background: radial-gradient(circle, #5a3a26 0 60%, #cfc6ba 62%); }
+.pname { font-weight: 600; }
+.pbest { font-size: 0.68rem; color: var(--muted); }
+.phint { max-width: 22em; font-size: 0.82rem; min-height: 2.6em; }
+.target {
+  position: fixed; left: 12px; top: max(12px, env(safe-area-inset-top));
+  display: flex; align-items: center; gap: 8px;
+  font-size: 0.8rem; color: var(--foam);
+  pointer-events: none; z-index: 1;
+}
+.target .thumb { width: 36px; height: 36px; box-shadow: 0 0 0 2px #efe8df; }
+button.link { background: none; box-shadow: none; padding: 6px; font-size: 0.85rem; color: var(--muted); text-decoration: underline; }
+#hint { padding-left: 120px; }

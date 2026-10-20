@@ -24,12 +24,15 @@
       <p class="tagline" data-i18n="tagline">Master latte art in 8 seconds a day.</p>
       <p class="fineprint" data-i18n="fineprint">Results not guaranteed. Milk not included.</p>
     </div>
+    <div id="patterns" class="patterns"></div>
+    <p id="patternHint" class="note phint"></p>
     <button id="startBtn" type="button" data-i18n="start">Start pouring</button>
     <p id="startNote" class="note"></p>
   </main>
 
   <main id="play" class="screen" hidden>
     <canvas id="cup"></canvas>
+    <div id="targetBadge" class="target"><span id="targetThumb" class="thumb"></span><span id="targetName"></span></div>
     <button id="muteBtn" class="mute" type="button" aria-label="Mute">
       <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
         <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>
@@ -47,6 +50,7 @@
         <button id="againBtn" type="button" data-i18n="again">Pour again</button>
         <button id="saveBtn" type="button" class="secondary" data-i18n="save">Save image</button>
       </div>
+      <button id="patternsBtn" type="button" class="link" data-i18n="patterns">Try another pattern</button>
     </div>
     <div id="savePanel" class="save-panel" hidden>
       <img id="saveImg" alt="Latte art">
@@ -78,7 +82,7 @@
     // 每次打开都给所有脚本加时间戳（用 import map 改写模块路径），保证拿到最新版。
     (function () {
       var v = Date.now();
-      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher', 'score', 'snapshot', 'analytics', 'i18n', 'verdicts', 'scene', 'audio'];
+      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher', 'score', 'snapshot', 'analytics', 'i18n', 'verdicts', 'scene', 'audio', 'patterns', 'demos'];
       var imports = {};
       files.forEach(function (f) { imports[new URL(f + '.js', location.href).href] = './' + f + '.js?v=' + v; });
       var map = document.createElement('script');
