@@ -21,6 +21,8 @@ export class Pour {
     this.crossings = 0;      // 有效晃动（过中线）次数
     this.lastCross = 0;      // 上次过中线的时间
     this.halfPeriod = 0.15;  // 估计的半个晃动周期（秒）
+    this.pausedFor = 0;      // 已经停流多久（秒），停够了再出奶算新的一层（郁金香）
+    this.hasPoured = false;
     this.wiggle = 0;         // 晃动强度 0~1
   }
 
@@ -76,6 +78,19 @@ export class Pour {
       this.peak = 0;
     }
     // 两次过中线之间按时间插值，让相位连续；不晃了就停在接近下一个整数处，不再出新线
+    // 停一下再推（郁金香的手法）：停流超过 pushPause 后重新出奶，算新的一层，
+    // 两层交界处会画分隔线
+    const flowing = flowScale > 0.05 && (lift ?? 0) < 0.5 && !fusion;
+    if (flowing) {
+      if (this.hasPoured && this.pausedFor > config.pushPause) {
+        this.crossings = Math.ceil((this.crossings + 1) / config.crossingsPerLine) * config.crossingsPerLine;
+        this.lastCross = this.elapsed;
+      }
+      this.hasPoured = true;
+      this.pausedFor = 0;
+    } else if (this.hasPoured) {
+      this.pausedFor += dt;
+    }
     const phase = (this.crossings + Math.min(0.95, (this.elapsed - this.lastCross) / this.halfPeriod)) / config.crossingsPerLine;
 
     this.lift = lift;

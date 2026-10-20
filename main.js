@@ -8,7 +8,7 @@ import { verdict } from './verdicts.js';
 import { initAudio, isMuted, setMuted, resultSound } from './audio.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1020-r24';
+const BUILD = '1021-r25';
 
 const $ = id => document.getElementById(id);
 applyStatic();

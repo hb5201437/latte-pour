@@ -55,7 +55,9 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   const home = () => ({ x: c0 - fwd.x * config.pourStartBack * c0, y: c0 - fwd.y * config.pourStartBack * c0 });
   const entry = home();
   // 拉花缸的画面状态
-  const pit = { height: 0.6, milk: 1, away: 0 };
+  const pit = { height: 0.6, milk: 1, away: 0, rock: 0 };
+  // 缸里奶面的晃动：弹簧 + 惯性。拉花缸突然横移/前倾，奶会先落后、再荡回来
+  const slosh = { x: 0, y: 0, vx: 0, vy: 0, lastX: null, lastY: null, lastVx: 0, lastVy: 0, lastFlow: 0 };
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, config.maxDpr);
@@ -153,6 +155,28 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     }
     if (state === 'done') { target = 1; pit.away = Math.min(1, pit.away + dt / 0.7); }
     pit.height += (target - pit.height) * (1 - Math.exp(-dt / 0.15));
+
+    // 拉花缸在画面上的移动速度、加速度（格/秒）
+    const vxp = slosh.lastX == null ? 0 : (p.x - slosh.lastX) / dt;
+    const vyp = slosh.lastY == null ? 0 : (p.y - slosh.lastY) / dt;
+    const axp = (vxp - slosh.lastVx) / dt, ayp = (vyp - slosh.lastVy) / dt;
+    slosh.lastX = p.x; slosh.lastY = p.y; slosh.lastVx = vxp; slosh.lastVy = vyp;
+    const latAcc = axp * lat.x + ayp * lat.y, fwdAcc = axp * fwd.x + ayp * fwd.y;
+
+    // 左右歪：陀螺仪模式跟手机的左右倾；手指模式跟横移速度
+    const roll = mode === 'tilt' && hud ? hud.roll : -(vxp * lat.x + vyp * lat.y) * 0.08;
+    pit.rock += (-roll * Math.PI / 180 * 0.8 - pit.rock) * (1 - Math.exp(-dt / 0.05));
+
+    // 奶面：往低的一侧流（左右歪），倾角突然变大往前涌，缸突然横移奶会落后
+    const flowNow = state === 'pouring' ? Math.min(1, pour.q / config.flowMax) : 0;
+    const dFlow = (flowNow - slosh.lastFlow) / dt;
+    slosh.lastFlow = flowNow;
+    const tx = Math.max(-0.8, Math.min(0.8, -roll / 22));
+    const k = 55, c = 3.2;
+    slosh.vx += (k * (tx - slosh.x) - c * slosh.vx - latAcc * 0.0035) * dt;
+    slosh.vy += (k * (0 - slosh.y) - c * slosh.vy - fwdAcc * 0.0035 + dFlow * 0.6) * dt;
+    slosh.x = Math.max(-0.9, Math.min(0.9, slosh.x + slosh.vx * dt));
+    slosh.y = Math.max(-0.9, Math.min(0.9, slosh.y + slosh.vy * dt));
   }
 
   function update(dt) {
@@ -294,6 +318,8 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
       milk: pit.milk,
       stream: flow > 0 ? (1.5 + 7 * Math.sqrt(flow)) * thin * (R / 150) : 0,
       alpha: 1 - away,
+      rock: pit.rock,
+      slosh,
     });
 
     // 当前操作模式，常驻在左下角
@@ -341,7 +367,8 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
       pulling = false;
       lift = 0;
       Object.assign(entry, home());
-      Object.assign(pit, { height: 0.6, milk: 1, away: 0 });
+      Object.assign(pit, { height: 0.6, milk: 1, away: 0, rock: 0 });
+      Object.assign(slosh, { x: 0, y: 0, vx: 0, vy: 0, lastX: null, lastY: null, lastVx: 0, lastVy: 0, lastFlow: 0 });
       poured = 0;
       unlockScreenAngle();
       overflowed = false;

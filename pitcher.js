@@ -10,8 +10,11 @@
 //    milk               缸里剩下的奶 0~1
 //    stream             奶柱粗细（像素），0 = 不出奶
 //    alpha              整体透明度（倒完移开时淡出）
+//    rock               左右歪的角度（弧度），整只缸绕缸嘴尖转
+//    slosh              { x, y } 奶面晃动的偏移（缸口内半径的比例，x 横向、y 前后）
 export function drawPitcher(ctx, s) {
   const { fwd, lat, size, height, tilt, milk, stream, alpha } = s;
+  const rock = s.rock || 0, slosh = s.slosh || { x: 0, y: 0 };
   if (alpha <= 0) return;
   const scale = 1 + 0.12 * height;
   const br = size * scale;                 // 缸口半径
@@ -30,6 +33,12 @@ export function drawPitcher(ctx, s) {
 
   ctx.save();
   ctx.globalAlpha = alpha;
+  // 左右歪：整只缸绕缸嘴落点转（奶柱落点不动）
+  if (rock) {
+    ctx.translate(s.tipX, s.tipY);
+    ctx.rotate(rock);
+    ctx.translate(-s.tipX, -s.tipY);
+  }
 
   // —— 影子：落在液面/桌面上，越高越淡越散 ——
   const shx = mx0 + br * 0.15 * height, shy = my0 - up + br * 0.12 * height;
@@ -57,22 +66,6 @@ export function drawPitcher(ctx, s) {
     ctx.fillStyle = sg;
     ctx.fill();
   }
-
-  // —— 把手：黑色，从缸身后侧伸出，先往后再往下弯 ——
-  const [h0x, h0y] = P(bx, by, 0, wall * 0.35);
-  const [h1x, h1y] = P(bx, by, br * 0.05, -belly * 0.55);
-  const [h2x, h2y] = P(bx, by, br * 0.08, -belly * 0.95);
-  ctx.lineCap = 'round';
-  ctx.lineJoin = 'round';
-  ctx.strokeStyle = '#1d1f22';
-  ctx.lineWidth = br * 0.3;
-  ctx.beginPath(); ctx.moveTo(h0x, h0y); ctx.quadraticCurveTo(h1x, h1y, h2x, h2y); ctx.stroke();
-  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
-  ctx.lineWidth = br * 0.07;
-  ctx.beginPath();
-  ctx.moveTo(h0x - lat.x * br * 0.07, h0y - lat.y * br * 0.07);
-  ctx.quadraticCurveTo(h1x - lat.x * br * 0.07, h1y - lat.y * br * 0.07, h2x - lat.x * br * 0.06, h2y - lat.y * br * 0.06);
-  ctx.stroke();
 
   // —— 缸身：缸口椭圆 → 鼓肚 → 缸底，拉丝不锈钢 ——
   const body = () => {
@@ -126,6 +119,19 @@ export function drawPitcher(ctx, s) {
   ctx.strokeStyle = 'rgba(40,44,50,0.55)';
   ctx.lineWidth = Math.max(1, br * 0.02);
   ctx.stroke();
+
+  // —— 把手：咖啡师右手握着，从缸身右侧伸出去的一个弯把 ——
+  const [h0x, h0y] = P(ox, oy, br * 0.92, -br * sq * 0.35);
+  const [hcx, hcy] = P(mx0, my0, belly * 1.95, -wall * 0.15);
+  const [h1x, h1y] = P(bx, by, belly * 0.95, br * 0.15);
+  ctx.lineCap = 'round';
+  ctx.strokeStyle = '#1b1d20';
+  ctx.lineWidth = br * 0.24;
+  ctx.beginPath(); ctx.moveTo(h0x, h0y); ctx.quadraticCurveTo(hcx, hcy, h1x, h1y); ctx.stroke();
+  ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+  ctx.lineWidth = br * 0.06;
+  const [q0x, q0y] = P(h0x, h0y, 0, br * 0.05), [qcx, qcy] = P(hcx, hcy, -br * 0.06, br * 0.05), [q1x, q1y] = P(h1x, h1y, 0, br * 0.05);
+  ctx.beginPath(); ctx.moveTo(q0x, q0y); ctx.quadraticCurveTo(qcx, qcy, q1x, q1y); ctx.stroke();
 
   // —— 缸嘴：从缸口前沿伸出的尖嘴，中间有导流槽 ——
   const [s0x, s0y] = P(ox, oy, br * 0.62, br * sq * 0.55);
@@ -182,9 +188,11 @@ export function drawPitcher(ctx, s) {
     ctx.beginPath();
     ctx.ellipse(ox, oy, ir, ir * sq, rot, 0, Math.PI * 2);
     ctx.clip();
-    const mr = ir * (0.45 + 0.55 * Math.sqrt(milk));
-    const shift = (ir - mr) * sq + ir * sq * 0.2 * tilt;
-    const mx = ox + fwd.x * shift, my = oy + fwd.y * shift;
+    // 奶越少，奶面越低越小（露出的内壁越多）；倾斜时往缸嘴涌；摇晃时来回荡
+    const mr = ir * (0.3 + 0.7 * Math.sqrt(milk));
+    const shift = (ir - mr) * sq * (0.4 + 0.6 * tilt) + ir * sq * (0.15 * tilt + slosh.y * 0.35);
+    const side = slosh.x * (ir - mr * 0.6) * 0.6;
+    const mx = ox + fwd.x * shift + lat.x * side, my = oy + fwd.y * shift + lat.y * side;
     const mg = ctx.createLinearGradient(...P(mx, my, 0, -mr * sq), ...P(mx, my, 0, mr * sq));
     mg.addColorStop(0, '#cfc7bb');
     mg.addColorStop(0.45, '#f7f2ea');
