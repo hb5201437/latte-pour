@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Latte Pour</title>
   <link rel="stylesheet" href="style.css">
+  <meta http-equiv="Cache-Control" content="no-cache">
 </head>
 <body>
   <main id="start" class="screen">
@@ -34,8 +35,25 @@
     </dl>
   </main>
 
-  <footer>第三方库：无</footer>
+  <footer>第三方库：无 · <span id="build"></span></footer>
 
-  <script type="module" src="main.js"></script>
+  <script>
+    // GitHub Pages 让浏览器缓存脚本 10 分钟，刚部署完手机上可能还是旧版。
+    // 每次打开都给所有脚本加时间戳（用 import map 改写模块路径），保证拿到最新版。
+    (function () {
+      var v = Date.now();
+      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt'];
+      var imports = {};
+      files.forEach(function (f) { imports[new URL(f + '.js', location.href).href] = './' + f + '.js?v=' + v; });
+      var map = document.createElement('script');
+      map.type = 'importmap';
+      map.textContent = JSON.stringify({ imports: imports });
+      document.currentScript.after(map);
+      var main = document.createElement('script');
+      main.type = 'module';
+      main.src = 'main.js?v=' + v;
+      document.body.appendChild(main);
+    })();
+  </script>
 </body>
 </html>

@@ -204,6 +204,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
         `左右 ${hud.roll.toFixed(1)}°  横移 ${hud.lateral.toFixed(1)} 格`,
         `流量 ${(pour.q / config.flowMax * 100).toFixed(0)}%  加速度峰值 ${accelShow.toFixed(1)} (推 >${config.pushAccel})`,
         `状态 ${state}${pulling ? ' · 穿心' : ''}`,
+        `屏幕角度 screen=${screen.orientation ? screen.orientation.angle : '无'} window=${window.orientation ?? '无'}`,
       ];
       lines.forEach((t, i) => ctx.fillText(t, 12, 24 + i * 16));
     }
