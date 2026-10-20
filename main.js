@@ -10,7 +10,7 @@ import { PATTERNS, patternById } from './patterns.js';
 import { renderDemo } from './demos.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1021-r27';
+const BUILD = '1021-r28';
 
 const $ = id => document.getElementById(id);
 applyStatic();

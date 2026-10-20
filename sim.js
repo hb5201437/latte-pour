@@ -23,6 +23,7 @@ export class FoamSim {
     this.ktmp = new Float32Array(n * n);
     this.inside = new Uint8Array(n * n);
     this.fusion = 0; // 融合进度 0~1，表面变浅的程度
+    this.vol = 0;
     this.area = 0;
     this.box = null;
     this.bg = new Uint8ClampedArray(n * n * 3);
@@ -50,7 +51,9 @@ export class FoamSim {
     this.d.fill(0);
     this.p.fill(0);
     this.k.fill(0);
+    this.vol = 0;
     this.fusion = 0;
+    this.vol = 0;    // 倒进杯子的总量（满流量倒 1 秒 = 1），决定杯子放平到什么程度
     this.area = 0;   // 这一片倒入的奶泡面积（格²）
     this.piece = 0;
     this.box = null; // 有奶泡的范围 [x0, y0, x1, y1]，只算这块，省性能
@@ -92,7 +95,21 @@ export class FoamSim {
 
   // src: { x, y, vx, vy, q, phase, fusion }，坐标/速度用格，q 为每秒新增面积（格²），
   // phase 为当前晃动相位（每晃过一次中线 +1），fusion = true 表示还在融合阶段
+  // 液面：杯子一开始往拉花缸那侧斜着拿，液面是贴着那一侧杯壁的小圆；
+  // 越倒越满、杯子慢慢放平（回杯），液面从贴着杯壁的那一点往外扩，最后铺满杯口。
+  // 返回 { x, y, r }（格），以及贴杯壁的那一点 { ax, ay }
+  surface() {
+    const n = this.n, c = (n - 1) / 2, Rc = n / 2 - 1;
+    const fill = Math.min(1, this.vol / config.cupCapacity);
+    const e = smoothstep(0, config.levelAt, fill);
+    const r = Rc * (config.tiltSurface + (1 - config.tiltSurface) * e);
+    const bx = -Math.cos(config.forwardAngle), by = -Math.sin(config.forwardAngle); // 往拉花缸那侧
+    return { x: c + bx * (Rc - r), y: c + by * (Rc - r), r, ax: c + bx * Rc, ay: c + by * Rc, level: e };
+  }
+
   step(dt, src) {
+    const prevR = this.surface().r;
+    if (src.q > 0) this.vol += (src.q / config.flowMax) * dt;
     if (src.fusion) {
       if (src.q > 0) this.fusion = Math.min(1, this.fusion + (dt * (0.6 + 0.4 * src.q / config.flowMax)) / config.fusionSec);
       this.fusionX = src.x; this.fusionY = src.y;
@@ -111,7 +128,10 @@ export class FoamSim {
     // 左右摆的时候，每一层奶泡从奶柱落点冒出来、被下一层往前推（视频里千层就是这样一层层长出来的），
     // 所以摆得越厉害，往前推得越猛、往后收得越紧
     const wig = src.wiggle ?? 0;
-    const cc = (n - 1) / 2, wallR = n / 2 - 2, wallW = config.wallWidth, wallSpread = config.wallSpread;
+    // 液面边缘就是杯壁；液面扩大时，奶泡跟着从贴杯壁的那一点往外撑开
+    const surf = this.surface();
+    const wallR = surf.r - 1, wallW = config.wallWidth, wallSpread = config.wallSpread;
+    const expand = surf.r > prevR ? (surf.r - prevR) / dt / surf.r * config.levelStretch : 0;
     const biasFront = config.forwardBias + wig * config.wiggleFrontBias;
     const biasBack = config.backPull + wig * config.wiggleBackPull;
     const cone = wig * config.wiggleCone;
@@ -196,8 +216,10 @@ export class FoamSim {
           uy += fy * g;
         }
         // 杯壁：奶泡推到杯壁附近不能再往外走，改成沿着杯壁往两侧流（月牙两端往下包就是这样来的）
+        if (expand > 0) { ux += (x - surf.ax) * expand; uy += (y - surf.ay) * expand; }
+        const rx = x - surf.x, ry = y - surf.y, rr = Math.hypot(rx, ry);
+        if (rr > surf.r + 1) continue; // 液面外面是干的杯壁
         if (wallW > 0) {
-          const rx = x - cc, ry = y - cc, rr = Math.hypot(rx, ry);
           const s = smoothstep(wallR - wallW, wallR, rr);
           if (s > 0 && rr > 1) {
             const nx = rx / rr, ny = ry / rr;
@@ -277,6 +299,8 @@ export class FoamSim {
   // 写入 RGBA 像素（长度 n*n*4）
   render(out) {
     const { n, d, p, k: kf, bg, vig, grain } = this;
+    const surf = this.surface();
+    const sx0 = surf.x, sy0 = surf.y, sr = surf.r;
     const { edgeLo, edgeHi, haloLo, haloStrength, foamFloor, lineFrac, lineStrength } = config;
     // 融合让油脂变浅，入点附近最明显
     const fu0 = this.fusion * config.fusionLighten;
@@ -347,9 +371,24 @@ export class FoamSim {
       const aa = a * (1 - gap);
       const j = i * 4;
       const vg = vig[i];
-      out[j] = (br + (fr - br) * aa) * vg;
-      out[j + 1] = (bgc + (fg - bgc) * aa) * vg;
-      out[j + 2] = (bb + (fb - bb) * aa) * vg;
+      let R0 = (br + (fr - br) * aa) * vg, G0 = (bgc + (fg - bgc) * aa) * vg, B0 = (bb + (fb - bb) * aa) * vg;
+      // 液面外面露出的杯子内壁（杯子斜着时看得到）：陶瓷色，越靠液面越暗；液面边缘一圈暗线
+      if (sr < n / 2 - 1.5) {
+        const rs = Math.hypot((i % n) - sx0, ((i / n) | 0) - sy0);
+        const w = smoothstep(sr - 0.6, sr + 0.8, rs);
+        if (rs > sr - 3) {
+          const edge = Math.exp(-((rs - sr) ** 2) / 2.5) * 0.35;
+          R0 *= 1 - edge; G0 *= 1 - edge; B0 *= 1 - edge;
+        }
+        if (w > 0) {
+          const dark = Math.exp(-(rs - sr) / 10) * 0.25;
+          const wr = 232 * (1 - dark), wg = 224 * (1 - dark), wb = 212 * (1 - dark);
+          R0 += (wr - R0) * w; G0 += (wg - G0) * w; B0 += (wb - B0) * w;
+        }
+      }
+      out[j] = R0;
+      out[j + 1] = G0;
+      out[j + 2] = B0;
       out[j + 3] = 255;
     }
   }

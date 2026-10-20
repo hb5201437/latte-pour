@@ -91,11 +91,13 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     drawLiquidGloss(gc, R, R, R);
   }
 
-  // 限制在杯口内
+  // 限制在液面内（杯子斜着时液面比杯口小，偏向拉花缸那侧）
   function clampToCup(gx, gy) {
-    const c = n / 2, dx = gx - c, dy = gy - c, r = Math.hypot(dx, dy), max = n / 2 - 2;
-    return r > max ? [c + (dx * max) / r, c + (dy * max) / r] : [gx, gy];
+    const s = sim.surface();
+    const dx = gx - s.x, dy = gy - s.y, r = Math.hypot(dx, dy), max = s.r - 3;
+    return r > max ? [s.x + (dx * max) / r, s.y + (dy * max) / r] : [gx, gy];
   }
+  const clampP = () => { [p.x, p.y] = clampToCup(p.x, p.y); };
 
   // 拖拉花缸：手指按住任意位置拖，拉花缸跟着平移（相对移动，手指不会挡住入奶点）
   let drag = null;
@@ -189,6 +191,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     else if (state === 'pouring') {
       elapsed += dt;
       p.x = entry.x; p.y = entry.y;
+      clampP();
       sim.step(dt, pour.update(dt, p.x, p.y));
       trackVolume(dt);
     } else {
@@ -240,6 +243,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
       }
       flowScale = 1;
       const ahead = (p.x - c) * fwd.x + (p.y - c) * fwd.y;
+      clampP();
       sim.step(dt, pour.update(dt, p.x, p.y, flowScale, lift));
       trackVolume(dt);
       if (state === 'pouring' && ahead >= config.pullEnd * c) finish();
@@ -251,6 +255,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     p.y = entry.y + lat.y * s.lateral;
     flowScale = s.flow;
     lift = 0;
+    clampP();
     sim.step(dt, pour.update(dt, p.x, p.y, flowScale));
     trackVolume(dt);
     if (state !== 'pouring') return;
