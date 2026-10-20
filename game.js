@@ -1,8 +1,9 @@
 import { config } from './config.js';
 import { FoamSim } from './sim.js';
+import { Pour } from './pour.js';
 
 // 手指/鼠标版：按住 = 倒奶，倒奶点跟着手指走，松手 = 结束。
-// 流量看"净移动"速度：原地或左右晃动时满流量，快速单向划过时流量降到很低（穿心）。
+// 流量、穿心、千层纹的规则在 pour.js。
 export function createGame(canvas, { onEnd }) {
   const ctx = canvas.getContext('2d');
   const n = config.gridSize;
@@ -17,8 +18,9 @@ export function createGame(canvas, { onEnd }) {
   let elapsed = 0;
   let last = 0;
 
-  // 倒奶点（格坐标）及其平滑速度
-  const p = { x: n / 2, y: n / 2, px: n / 2, py: n / 2, vx: 0, vy: 0, dx: 0, dy: 0, q: 0 };
+  const pour = new Pour();
+  // 倒奶点（格坐标）
+  const p = { x: n / 2, y: n / 2 };
 
   function layout() {
     dpr = Math.min(window.devicePixelRatio || 1, config.maxDpr);
@@ -46,8 +48,7 @@ export function createGame(canvas, { onEnd }) {
     if (state !== 'ready') return;
     canvas.setPointerCapture(e.pointerId);
     [p.x, p.y] = toGrid(e);
-    p.px = p.x; p.py = p.y;
-    p.vx = p.vy = p.dx = p.dy = 0;
+    pour.start(p.x, p.y);
     elapsed = 0;
     state = 'pouring';
   });
@@ -63,28 +64,13 @@ export function createGame(canvas, { onEnd }) {
 
   function finish() {
     state = 'done';
-    p.q = 0;
     onEnd();
   }
 
   function update(dt) {
     if (state !== 'pouring') return;
     elapsed += dt;
-
-    const ivx = (p.x - p.px) / dt, ivy = (p.y - p.py) / dt;
-    p.px = p.x; p.py = p.y;
-    const av = 1 - Math.exp((-dt * 1000) / config.velTauMs);
-    const ad = 1 - Math.exp((-dt * 1000) / config.driftTauMs);
-    p.vx += (ivx - p.vx) * av;
-    p.vy += (ivy - p.vy) * av;
-    p.dx += (ivx - p.dx) * ad;
-    p.dy += (ivy - p.dy) * ad;
-
-    const drift = Math.hypot(p.dx, p.dy);
-    const ramp = Math.min(1, (elapsed * 1000) / config.flowRampMs);
-    p.q = config.flowMax * Math.max(config.flowMinFrac, 1 - drift / config.pullSpeed) * ramp;
-
-    sim.step(dt, { x: p.x, y: p.y, vx: p.vx, vy: p.vy, q: p.q });
+    sim.step(dt, pour.update(dt, p.x, p.y));
 
     if (elapsed >= config.pourTimeLimit) finish();
   }
@@ -136,7 +122,7 @@ export function createGame(canvas, { onEnd }) {
     if (state === 'pouring') {
       const sx = cx - R + (p.x / n) * 2 * R;
       const sy = cy - R + (p.y / n) * 2 * R;
-      const r = 3 + 6 * Math.sqrt(p.q / config.flowMax);
+      const r = 3 + 6 * Math.sqrt(pour.q / config.flowMax);
       ctx.beginPath();
       ctx.arc(sx, sy, r, 0, Math.PI * 2);
       ctx.fillStyle = 'rgba(255,255,255,0.9)';

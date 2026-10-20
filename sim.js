@@ -1,9 +1,12 @@
 import { config } from './config.js';
 
-// 奶泡模型：一张 n×n 的浓度场，0 = 咖啡，1 = 新鲜奶泡。
+// 奶泡模型：两张 n×n 的场
+//   d：奶泡浓度，0 = 咖啡，1 = 新鲜奶泡
+//   p：这团奶泡是第几次晃动时倒进去的（连续值，存成 p×d 以免和咖啡混在边缘出假线）
 // 每帧做两件事：
-//   1. 按速度场把浓度"搬运"一步（半拉格朗日：从每格往回追踪取样）
-//   2. 在奶柱落点注入新奶泡
+//   1. 按速度场把两张场"搬运"一步（半拉格朗日：从每格往回追踪取样）
+//   2. 在奶柱落点注入新奶泡，记下当前晃动相位
+// 画面上 p 每跨过一个整数就画一条细线 = 每次晃动时奶泡的轮廓，层层套起来就是千层心。
 // 速度场 = 落点处的"源"（新奶泡把旧的往外推，面积守恒）
 //        + 奶柱移动时拖着附近奶泡一起走（晃动、穿心都靠这个）
 // 不追求物理正确，只求看起来像。
@@ -12,6 +15,8 @@ export class FoamSim {
     this.n = n;
     this.d = new Float32Array(n * n);
     this.tmp = new Float32Array(n * n);
+    this.p = new Float32Array(n * n);
+    this.ptmp = new Float32Array(n * n);
     this.inside = new Uint8Array(n * n);
     this.bg = new Uint8ClampedArray(n * n * 3);
 
@@ -27,6 +32,7 @@ export class FoamSim {
 
   reset() {
     this.d.fill(0);
+    this.p.fill(0);
   }
 
   // 咖啡表面：中心偏浅的油脂色，向边缘变深，加一点低频斑驳
@@ -46,9 +52,10 @@ export class FoamSim {
     }
   }
 
-  // src: { x, y, vx, vy, q }，坐标/速度用格，q 为每秒新增面积（格²）
+  // src: { x, y, vx, vy, q, phase }，坐标/速度用格，q 为每秒新增面积（格²），
+  // phase 为当前晃动相位（每晃过一次中线 +1）
   step(dt, src) {
-    const { n, d, tmp, inside } = this;
+    const { n, d, tmp, p, ptmp, inside } = this;
     const k = src.q / (2 * Math.PI);
     const sig2 = config.dragRadius * config.dragRadius;
     const dragCut = sig2 * 9;
@@ -58,17 +65,18 @@ export class FoamSim {
     const age = config.foamAgeRate * dt;
     const sharpen = config.edgeSharpen * dt;
     const mid = (config.edgeLo + config.edgeHi) / 2;
-    const bias = config.forwardBias;
+    const biasFront = config.forwardBias, biasBack = config.backPull;
     const fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
 
     for (let y = 0; y < n; y++) {
       for (let x = 0; x < n; x++) {
         const i = y * n + x;
-        if (!inside[i]) { tmp[i] = 0; continue; }
+        if (!inside[i]) { tmp[i] = 0; ptmp[i] = 0; continue; }
         const dx = x - src.x, dy = y - src.y;
         const r2 = dx * dx + dy * dy + 1;
-        // 奶泡主要往前（远离拉花缸）推，落点因此留在奶泡后缘
-        const push = 1 + (bias * (dx * fx + dy * fy)) / Math.sqrt(r2);
+        // 前方多推一点、后方往回收，落点因此留在奶泡后缘
+        const cos = (dx * fx + dy * fy) / Math.sqrt(r2);
+        const push = 1 + cos * (cos > 0 ? biasFront : biasBack);
         let ux = (k * push * dx) / r2;
         let uy = (k * push * dy) / r2;
         if (r2 < dragCut) {
@@ -79,7 +87,9 @@ export class FoamSim {
         let bx = ux * dt, by = uy * dt;
         const len = Math.hypot(bx, by);
         if (len > vmax) { bx *= vmax / len; by *= vmax / len; }
-        let v = sample(d, n, x - bx, y - by);
+        const sx = x - bx, sy = y - by;
+        const v0 = sample(d, n, sx, sy);
+        let v = v0;
         if (v > floor) v = Math.max(floor, v - age);
         else if (v > 0) {
           // 搬运会把边缘越抹越糊，这里把中间值往两头推，保持轮廓利落
@@ -87,10 +97,13 @@ export class FoamSim {
           v = v < 0 ? 0 : v > floor ? floor : v;
         }
         tmp[i] = v;
+        // p×d 跟着 d 同比例变化，保证 p 本身不变
+        ptmp[i] = v0 > 1e-4 ? sample(p, n, sx, sy) * (v / v0) : 0;
       }
     }
 
     // 奶柱落点注入新奶泡，流量小时落点也变细
+    const phase = src.phase ?? 0;
     const rIn = config.streamRadius * Math.sqrt(src.q / config.flowMax);
     if (rIn > 0.05) {
       // 边缘按距离给部分浓度，细奶柱也是连续的线而不是一串点
@@ -100,20 +113,25 @@ export class FoamSim {
       for (let y = y0; y <= y1; y++) {
         for (let x = x0; x <= x1; x++) {
           const w = Math.min(1, rIn + 0.5 - Math.hypot(x - src.x, y - src.y));
+          if (w <= 0) continue;
           const i = y * n + x;
-          if (w > tmp[i]) tmp[i] = w;
+          tmp[i] += (1 - tmp[i]) * w;
+          ptmp[i] += (phase * tmp[i] - ptmp[i]) * w;
         }
       }
     }
 
     this.d = tmp;
     this.tmp = d;
+    this.p = ptmp;
+    this.ptmp = p;
   }
 
   // 写入 RGBA 像素（长度 n*n*4）
   render(out) {
-    const { n, d, bg } = this;
-    const { edgeLo, edgeHi, haloLo, haloStrength, foamFloor } = config;
+    const { n, d, p, bg } = this;
+    const { edgeLo, edgeHi, haloLo, haloStrength, foamFloor, lineWidth, lineStrength } = config;
+    const ph = i => (d[i] > 0.05 ? p[i] / d[i] : 0);
     for (let i = 0; i < n * n; i++) {
       const v = d[i];
       const a = smoothstep(edgeLo, edgeHi, v);
@@ -123,7 +141,24 @@ export class FoamSim {
       const bb = bg[i * 3 + 2] * (1 - halo);
       // 旧奶泡偏奶油色，新奶泡偏白
       const t = Math.min(1, Math.max(0, (v - foamFloor) / (1 - foamFloor)));
-      const fr = 236 + 14 * t, fg = 222 + 25 * t, fb = 200 + 38 * t;
+      let fr = 236 + 14 * t, fg = 222 + 25 * t, fb = 200 + 38 * t;
+      // 千层纹：相位跨过整数处画线。用相位的梯度把"离整数多远"换算成格数，线宽就处处一致
+      let la = 0;
+      if (v > foamFloor - 0.02) {
+        const x = i % n;
+        if (x > 0 && x < n - 1 && i >= n && i < n * n - n) {
+          const pc = p[i] / v;
+          const gx = (ph(i + 1) - ph(i - 1)) / 2, gy = (ph(i + n) - ph(i - n)) / 2;
+          const g = Math.hypot(gx, gy);
+          if (g > 1e-4 && g < 0.6) {
+            const dist = Math.abs(pc - Math.round(pc)) / g;
+            la = (1 - smoothstep(lineWidth * 0.5, lineWidth * 0.5 + 1, dist)) * lineStrength;
+            // 刚倒下去还没被推开的地方（梯度很大）不画，避免落点附近一团乱线
+            la *= 1 - smoothstep(0.25, 0.6, g);
+          }
+        }
+      }
+      fr += (176 - fr) * la; fg += (124 - fg) * la; fb += (84 - fb) * la;
       const j = i * 4;
       out[j] = br + (fr - br) * a;
       out[j + 1] = bgc + (fg - bgc) * a;
