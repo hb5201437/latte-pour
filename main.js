@@ -2,7 +2,7 @@ import { reading, requestSensors } from './sensors.js';
 import { createGame } from './game.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1020-r10';
+const BUILD = '1020-r11';
 
 const $ = id => document.getElementById(id);
 $('build').textContent = '版本 ' + BUILD;
@@ -17,7 +17,7 @@ const debugHud = params.get('debug') === '1';
 const forceTouch = params.get('mode') === 'touch';
 
 const HINTS = {
-  tilt: '横握手机，屏幕上沿往前压开始倒奶 · 先融合一下，出白后左右匀速摇晃出千层纹 · 最后向前一推拉出心尖',
+  tilt: '手指点杯子选入点，倒的时候可以拖着往后退 · 屏幕上沿往前压出奶，压得越多流量越大 · 出白后左右匀速摇晃出千层纹 · 向前一推收尾',
   touch: '在杯子下半部按住倒奶 · 先融合一下，出白后左右匀速晃出千层纹 · 最后快速向上一划拉出心尖',
 };
 

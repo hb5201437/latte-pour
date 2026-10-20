@@ -9,13 +9,16 @@ export class TiltInput {
     this.rollCenter = null;
   }
 
-  // 没在倒奶时调用：基准姿势慢慢跟随当前姿势，吸收手的缓慢漂移；
-  // 真正的前倾比这快得多，来不及被吸收
+  // 没在倒奶时调用。基准姿势只在往后仰时跟上去（往前倾一点都不吸收，
+  // 否则慢慢倾的时候基准跟着走，永远倾不到出奶的角度）
   follow(dt) {
     const t = screenTilt();
     if (this.basePitch == null) { this.basePitch = t.pitch; this.rollCenter = t.roll; return; }
-    const a = 1 - Math.exp((-dt * 1000) / config.baseFollowTauMs);
-    if (t.pitch > this.basePitch - config.tiltStart) this.basePitch += (t.pitch - this.basePitch) * a;
+    if (t.pitch > this.basePitch) {
+      const a = 1 - Math.exp((-dt * 1000) / config.baseFollowTauMs);
+      this.basePitch += (t.pitch - this.basePitch) * a;
+    }
+    const a = 1 - Math.exp((-dt * 1000) / config.rollCenterTauMs);
     this.rollCenter += (t.roll - this.rollCenter) * a;
   }
 
@@ -24,14 +27,14 @@ export class TiltInput {
     if (this.basePitch == null) this.follow(dt);
     // 前倾角：屏幕上沿往下压了多少度
     const tilt = this.basePitch - t.pitch;
-    // 左右晃：相对一个慢速跟随的中心，手一直歪着拿也不会让奶柱跑偏
-    const a = 1 - Math.exp((-dt * 1000) / config.rollCenterTauMs);
+    // 左右倾 → 入点横移。倒的时候中心几乎不跟随，手不稳入点就会跟着偏
+    const a = 1 - Math.exp((-dt * 1000) / config.rollCenterPourTauMs);
     this.rollCenter += (t.roll - this.rollCenter) * a;
     const lateral = Math.max(-config.lateralMax,
       Math.min(config.lateralMax, -(t.roll - this.rollCenter) * config.rollGain));
-    // 流量比例：没过起倒角为 0，过了之后随倾角增大，到满倾角封顶
-    const flow = tilt < config.tiltStart ? 0
-      : Math.max(config.tiltFlowMin, Math.min(1, (tilt - config.tiltStart) / (config.tiltFull - config.tiltStart)));
+    // 流量比例：过了起倒角从 0 平滑增加，到满倾角封顶
+    const f = Math.min(1, Math.max(0, (tilt - config.tiltStart) / (config.tiltFull - config.tiltStart)));
+    const flow = f * f * (3 - 2 * f);
     return { tilt, roll: t.roll - this.rollCenter, lateral, flow, accel: takeAccelPeak() };
   }
 }

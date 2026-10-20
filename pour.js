@@ -21,6 +21,7 @@ export class Pour {
     this.crossings = 0;      // 有效晃动（过中线）次数
     this.lastCross = 0;      // 上次过中线的时间
     this.halfPeriod = 0.15;  // 估计的半个晃动周期（秒）
+    this.wiggle = 0;         // 晃动强度 0~1
   }
 
   // flowScale：额外的流量比例（陀螺仪模式下由前倾角决定，手指模式为 1）
@@ -59,6 +60,9 @@ export class Pour {
     const ac = 1 - Math.exp((-dt * 1000) / config.wiggleCenterTauMs);
     this.center = this.center == null ? lateralPos : this.center + (lateralPos - this.center) * ac;
     this.peak = Math.max(this.peak, Math.abs(lateralVel));
+    // 晃动强度：横向速度的慢速平均
+    const aw = 1 - Math.exp((-dt * 1000) / config.wiggleTauMs);
+    this.wiggle += (Math.min(1, Math.abs(lateralVel) / config.wiggleFullSpeed) - this.wiggle) * aw;
     const off = lateralPos - this.center;
     const side = off > config.wiggleHysteresis ? 1 : off < -config.wiggleHysteresis ? -1 : this.side;
     if (side !== this.side) {
@@ -73,7 +77,8 @@ export class Pour {
     // 两次过中线之间按时间插值，让相位连续；不晃了就停在接近下一个整数处，不再出新线
     const phase = (this.crossings + Math.min(0.95, (this.elapsed - this.lastCross) / this.halfPeriod)) / config.crossingsPerLine;
 
+    this.lift = lift;
     if (fusion) this.q = config.flowMax * flowScale; // 融合阶段的流量只用来推进融合进度和画奶柱
-    return { x, y, vx: this.vx, vy: this.vy, q: this.q, phase, fusion, lift };
+    return { x, y, vx: this.vx, vy: this.vy, q: this.q, phase, fusion, lift, wiggle: this.wiggle };
   }
 }

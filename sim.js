@@ -20,6 +20,8 @@ export class FoamSim {
     this.ptmp = new Float32Array(n * n);
     this.inside = new Uint8Array(n * n);
     this.fusion = 0; // 融合进度 0~1，表面变浅的程度
+    this.area = 0;
+    this.box = null;
     this.bg = new Uint8ClampedArray(n * n * 3);
 
     const c = (n - 1) / 2;
@@ -36,22 +38,41 @@ export class FoamSim {
     this.d.fill(0);
     this.p.fill(0);
     this.fusion = 0;
+    this.area = 0;   // 累计倒入的奶泡面积（格²）
+    this.box = null; // 有奶泡的范围 [x0, y0, x1, y1]，只算这块，省性能
   }
 
-  // 咖啡表面：中心偏浅的油脂色，向边缘变深，加一点低频斑驳
+  // 咖啡表面：偏橙的焦糖色油脂，向杯壁略深；加一圈圈沿杯壁方向拉长的细纹（融合时搅出来的）
   buildCrema() {
     const { n, bg } = this;
     const noise = new Float32Array(n * n).map(() => Math.random());
-    const blurred = boxBlur(boxBlur(boxBlur(noise, n, 4), n, 4), n, 4);
+    const blotch = boxBlur(boxBlur(boxBlur(noise, n, 4), n, 4), n, 4);
+    // 极坐标里的噪声：沿角度方向大幅模糊、沿半径方向几乎不模糊，映射回来就是一圈圈的细纹
+    const RN = 40, AN = 720;
+    const pn = new Float32Array(RN * AN).map(() => Math.random());
+    const streak = new Float32Array(RN * AN);
+    const win = 24;
+    for (let r = 0; r < RN; r++) {
+      let s = 0;
+      for (let k = -win; k <= win; k++) s += pn[r * AN + ((k + AN) % AN)];
+      for (let a = 0; a < AN; a++) {
+        streak[r * AN + a] = s / (2 * win + 1);
+        s += pn[r * AN + ((a + win + 1) % AN)] - pn[r * AN + ((a - win + AN) % AN)];
+      }
+    }
     const c = (n - 1) / 2;
     for (let i = 0; i < n * n; i++) {
       const x = i % n, y = (i / n) | 0;
-      const r = Math.min(1, Math.hypot(x - c, y - c) / (n / 2));
+      const rr = Math.hypot(x - c, y - c) / (n / 2);
+      const r = Math.min(1, rr);
       const t = r * r;
-      const v = 0.88 + (blurred[i] - 0.5) * 0.9;
-      bg[i * 3] = (148 - 80 * t) * v;
-      bg[i * 3 + 1] = (92 - 54 * t) * v;
-      bg[i * 3 + 2] = (52 - 32 * t) * v;
+      // 稍微螺旋一点，纹路不是正圆
+      const ang = (Math.atan2(y - c, x - c) / (2 * Math.PI) + 1 + r * 0.15) % 1;
+      const st = streak[Math.min(RN - 1, (r * (RN - 1)) | 0) * AN + ((ang * AN) | 0)];
+      const v = 0.94 + (blotch[i] - 0.5) * 0.35 + (st - 0.5) * 0.7;
+      bg[i * 3] = (184 - 46 * t) * v;
+      bg[i * 3 + 1] = (114 - 34 * t) * v;
+      bg[i * 3 + 2] = (64 - 22 * t) * v;
     }
   }
 
@@ -59,7 +80,8 @@ export class FoamSim {
   // phase 为当前晃动相位（每晃过一次中线 +1），fusion = true 表示还在融合阶段
   step(dt, src) {
     if (src.fusion) {
-      if (src.q > 0) this.fusion = Math.min(1, this.fusion + dt / config.fusionSec);
+      if (src.q > 0) this.fusion = Math.min(1, this.fusion + (dt * src.q / config.flowMax) / config.fusionSec);
+      this.fusionX = src.x; this.fusionY = src.y;
       return;
     }
     const { n, d, tmp, p, ptmp, inside } = this;
@@ -74,11 +96,18 @@ export class FoamSim {
     const mid = (config.edgeLo + config.edgeHi) / 2;
     const biasFront = config.forwardBias, biasBack = config.backPull;
     const fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
-    // 奶沉下去一点再浮上来，白色出现在落点稍前方（ox, oy），奶泡从那里往外长
-    const ox = src.x + fx * config.surfaceAhead, oy = src.y + fy * config.surfaceAhead;
+    // 奶钻到液面下，在落点前方浮上来（ox, oy），奶泡从那里往外长。
+    // 奶泡越大、流量越大，浮出点离落点越远；抬高收流时奶泡就在落点旁边冒出来，往两侧包成两瓣
+    if (src.q > 0) this.area += src.q * dt;
+    // 左右晃的时候奶柱一直在动、钻不深，奶泡就在落点附近冒出来，纹路因此在奶柱处收拢
+    const ahead = config.surfaceAhead + config.surfaceAheadFrac * Math.sqrt(this.area / Math.PI) *
+      Math.pow(src.q / config.flowMax, config.surfaceAheadFlowExp) * (1 - config.wiggleAheadCut * (src.wiggle ?? 0));
+    const ox = src.x + fx * ahead, oy = src.y + fy * ahead;
     // 奶柱本身往前冲，把落点后面的咖啡卷进奶泡后缘，自然形成心形上方的凹口
-    const jet = config.jetSpeed * (src.q / config.flowMax);
-    const jsig2 = config.jetRadius * config.jetRadius;
+    // 抬高后奶柱更细但落得更猛，冲力不减，把凹口扎深
+    const jet = config.jetSpeed * Math.max(src.q / config.flowMax, (src.lift ?? 0) * config.liftJet);
+    const jr = config.jetRadius * (1 + config.liftJetWiden * (src.lift ?? 0));
+    const jsig2 = jr * jr;
     // 抬高收尾：奶柱拖曳范围变窄，并把两侧奶泡往奶柱的路径上压
     const lift = src.lift ?? 0;
     const speed = Math.hypot(src.vx, src.vy);
@@ -87,11 +116,29 @@ export class FoamSim {
     const qsig2 = config.liftSqueezeRadius * config.liftSqueezeRadius;
     const dsig = config.dragRadius * (1 - (1 - config.liftDragNarrow) * lift);
     const dsig2 = dsig * dsig;
+    // 抬高收尾时奶泡像一张膜被整体带动：中间窄而强，外圈宽而弱，层层纹路被拉成 V
+    const tailAmp = config.liftDragTail * lift;
+    const tsig2 = config.liftDragTailRadius * config.liftDragTailRadius;
+    const tailCut = tailAmp > 0 ? tsig2 * 6 : 0;
 
-    for (let y = 0; y < n; y++) {
-      for (let x = 0; x < n; x++) {
+    // 只算"已有奶泡的范围 + 奶柱周围"：别处全是 0，搬运后还是 0
+    const pad = vmax + 2;
+    const reachS = Math.max(config.dragRadius, config.jetRadius) * 3 + config.streamRadius + config.surfaceAhead + 2;
+    let bx0 = Math.floor(Math.min(src.x, ox) - reachS), by0 = Math.floor(Math.min(src.y, oy) - reachS);
+    let bx1 = Math.ceil(Math.max(src.x, ox) + reachS), by1 = Math.ceil(Math.max(src.y, oy) + reachS);
+    if (this.box) {
+      bx0 = Math.min(bx0, this.box[0] - pad); by0 = Math.min(by0, this.box[1] - pad);
+      bx1 = Math.max(bx1, this.box[2] + pad); by1 = Math.max(by1, this.box[3] + pad);
+    }
+    bx0 = Math.max(0, bx0); by0 = Math.max(0, by0);
+    bx1 = Math.min(n - 1, bx1); by1 = Math.min(n - 1, by1);
+    tmp.fill(0);
+    ptmp.fill(0);
+
+    for (let y = by0; y <= by1; y++) {
+      for (let x = bx0; x <= bx1; x++) {
         const i = y * n + x;
-        if (!inside[i]) { tmp[i] = 0; ptmp[i] = 0; continue; }
+        if (!inside[i]) continue;
         const dx = x - ox, dy = y - oy;
         const r2 = dx * dx + dy * dy + 1;
         // 前方多推一点、后方往回收，落点因此留在奶泡后缘
@@ -101,15 +148,18 @@ export class FoamSim {
         let uy = (k * push * dy) / r2;
         const sdx = x - src.x, sdy = y - src.y;
         const s2 = sdx * sdx + sdy * sdy;
-        if (s2 < dragCut) {
-          const g = Math.exp(-s2 / dsig2) * drag;
+        if (s2 < dragCut || s2 < tailCut) {
+          let g = s2 < dragCut ? Math.exp(-s2 / dsig2) * drag : 0;
+          if (tailAmp > 0) g += Math.exp(-s2 / tsig2) * tailAmp;
           ux += src.vx * g;
           uy += src.vy * g;
         }
         if (squeeze > 0 && s2 < qsig2 * 4) {
-          // 离奶柱路径的横向距离，往路径方向收
+          // 离奶柱路径的横向距离，往路径方向收；只收奶柱前方和两侧，后面的两瓣不动
           const off = -sdx * ty + sdy * tx;
-          const g = Math.exp(-s2 / qsig2) * squeeze / config.liftSqueezeRadius;
+          const along = sdx * tx + sdy * ty;
+          const front = along > 0 ? 1 : Math.exp(-(along * along) / (qsig2 * 0.25));
+          const g = Math.exp(-s2 / qsig2) * squeeze / config.liftSqueezeRadius * front;
           ux += ty * off * g;
           uy += -tx * off * g;
         }
@@ -157,6 +207,19 @@ export class FoamSim {
       }
     }
 
+    // 更新奶泡范围
+    let nx0 = n, ny0 = n, nx1 = -1, ny1 = -1;
+    for (let y = by0; y <= by1; y++) {
+      const row = y * n;
+      for (let x = bx0; x <= bx1; x++) {
+        if (tmp[row + x] > 0.01) {
+          if (x < nx0) nx0 = x; if (x > nx1) nx1 = x;
+          if (y < ny0) ny0 = y; if (y > ny1) ny1 = y;
+        }
+      }
+    }
+    this.box = nx1 >= 0 ? [nx0, ny0, nx1, ny1] : null;
+
     this.d = tmp;
     this.tmp = d;
     this.p = ptmp;
@@ -167,20 +230,31 @@ export class FoamSim {
   render(out) {
     const { n, d, p, bg } = this;
     const { edgeLo, edgeHi, haloLo, haloStrength, foamFloor, lineFrac, lineStrength } = config;
-    // 融合让油脂整体变浅
-    const fu = this.fusion * config.fusionLighten;
+    // 融合让油脂变浅，入点附近最明显
+    const fu0 = this.fusion * config.fusionLighten;
+    const fxc = this.fusionX ?? n / 2, fyc = this.fusionY ?? n / 2;
+    const fr2 = (n * 0.35) ** 2;
     const halfBand = lineFrac / 2;
     const ph = i => (d[i] > 0.05 ? p[i] / d[i] : 0);
     for (let i = 0; i < n * n; i++) {
       const v = d[i];
-      const a = smoothstep(edgeLo, edgeHi, v);
-      const halo = smoothstep(haloLo, edgeLo, v) * (1 - a) * haloStrength;
-      const br = (bg[i * 3] + (200 - bg[i * 3]) * fu) * (1 - halo);
-      const bgc = (bg[i * 3 + 1] + (150 - bg[i * 3 + 1]) * fu) * (1 - halo);
-      const bb = (bg[i * 3 + 2] + (108 - bg[i * 3 + 2]) * fu) * (1 - halo);
+      // 轮廓用周围 5 格的平均值，边缘有一格多的柔和过渡，放大后不会出锯齿
+      const vs = i >= n && i < n * n - n ? (v * 2 + d[i - 1] + d[i + 1] + d[i - n] + d[i + n]) / 6 : v;
+      const a = smoothstep(edgeLo, edgeHi, vs);
+      // 晕边：奶泡外缘一圈浅金棕色（奶泡变薄、透出油脂）
+      const halo = smoothstep(haloLo, edgeLo, vs) * (1 - a) * haloStrength;
+      let fu = 0;
+      if (fu0 > 0) {
+        const ddx = (i % n) - fxc, ddy = ((i / n) | 0) - fyc;
+        fu = fu0 * (0.45 + 0.55 * Math.exp(-(ddx * ddx + ddy * ddy) / fr2));
+      }
+      let br = bg[i * 3] + (205 - bg[i * 3]) * fu;
+      let bgc = bg[i * 3 + 1] + (150 - bg[i * 3 + 1]) * fu;
+      let bb = bg[i * 3 + 2] + (100 - bg[i * 3 + 2]) * fu;
+      br += (214 - br) * halo; bgc += (165 - bgc) * halo; bb += (112 - bb) * halo;
       // 旧奶泡偏奶油色，新奶泡偏白
       const t = Math.min(1, Math.max(0, (v - foamFloor) / (1 - foamFloor)));
-      let fr = 236 + 14 * t, fg = 222 + 25 * t, fb = 200 + 38 * t;
+      let fr = 238 + 12 * t, fg = 226 + 20 * t, fb = 206 + 32 * t;
       // 千层纹：相位跨过整数处画一道色带，宽度占每层间距的 lineFrac，层被挤密的地方色带也跟着变细（和真的一样）
       let la = 0;
       if (v > foamFloor - 0.02) {
@@ -190,15 +264,16 @@ export class FoamSim {
           const gx = (ph(i + 1) - ph(i - 1)) / 2, gy = (ph(i + n) - ph(i - n)) / 2;
           const g = Math.hypot(gx, gy);
           if (g > 1e-4 && g < 0.6) {
-            const dist = Math.abs(pc - Math.round(pc));
-            const aa = g * 0.8; // 约 0.8 格的抗锯齿
-            la = (1 - smoothstep(halfBand - aa, halfBand + aa, dist)) * lineStrength;
+            // 换算成格：离线中心多少格、线半宽多少格（被拉得很开的地方也不超过上限，保持细线）
+            const distCells = Math.abs(pc - Math.round(pc)) / g;
+            const hw = Math.min(halfBand / g, config.lineMaxHalfWidth);
+            la = (1 - smoothstep(hw - 0.8, hw + 0.8, distCells)) * lineStrength;
             // 刚倒下去还没被推开的地方（梯度很大）不画，避免落点附近一团乱线
             la *= 1 - smoothstep(0.25, 0.6, g);
           }
         }
       }
-      fr += (176 - fr) * la; fg += (124 - fg) * la; fb += (84 - fb) * la;
+      fr += (190 - fr) * la; fg += (128 - fg) * la; fb += (78 - fb) * la;
       const j = i * 4;
       out[j] = br + (fr - br) * a;
       out[j + 1] = bgc + (fg - bgc) * a;
