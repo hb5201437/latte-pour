@@ -173,6 +173,8 @@ button:active { transform: scale(0.97); }
 @keyframes rise { from { opacity: 0; transform: translate(-50%, 16px); } to { opacity: 1; transform: translate(-50%, 0); } }
 .score { font-size: 3.4rem; font-weight: 700; }
 .tier { font-family: "New York", ui-serif, Georgia, "Songti SC", serif; font-size: 1.1rem; line-height: 1.35; margin: 4px 0 2px; }
+.tip { margin: 2px 0 8px; max-width: 26em; text-align: center; font-size: 0.85rem; line-height: 1.4; color: var(--muted); }
+.tip b { color: var(--foam); font-weight: 600; }
 .best.new { color: var(--gold); }
 .save-panel img { box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5); }
 .mute {

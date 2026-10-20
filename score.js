@@ -85,7 +85,8 @@ function inside(poly, x, y) {
   return hit;
 }
 
-// sim：FoamSim；pattern：patterns.js 里的图案。返回 { score: 0~100, tier, iou, coverage, layers }
+// sim：FoamSim；pattern：patterns.js 里的图案。返回 { score: 0~100, tier, tip, iou, coverage, layers }
+// tip：扣分最多的那一项（pull / back / pieces / layers / notch / small / shape），没有明显问题时为 null
 export function scorePour(sim, pattern) {
   const TEMPLATE = template(pattern);
   const n = sim.n, step = n / G;
@@ -157,19 +158,27 @@ export function scorePour(sim, pattern) {
   let score = Math.min(100, ((iou - iouZero) / (iouFull - iouZero)) * 100);
   // 凹口被填满要扣分（大白心的凹口本来就窄，填到一半以内不算）；树叶没有凹口，不查
   const notchFill = notchCells ? notchFilled / notchCells : 0;
-  if (pattern.notch) score *= 1 - config.scoreNotchPenalty * Math.max(0, (notchFill - config.scoreNotchFree) / (1 - config.scoreNotchFree));
+  // 每一项扣分的比例都记下来，最后挑扣得最多的那一项给玩家提示
+  const factors = {};
+  if (pattern.notch) factors.notch = 1 - config.scoreNotchPenalty * Math.max(0, (notchFill - config.scoreNotchFree) / (1 - config.scoreNotchFree));
   // 分层不够要扣分：郁金香要叠够层数，树叶要摇出够多的纹路
   const need = pattern.pieces || pattern.layers;
-  if (need) score *= 0.35 + 0.65 * Math.min(1, layers / need);
+  if (need) factors[pattern.pieces ? 'pieces' : 'layers'] = 0.35 + 0.65 * Math.min(1, layers / need);
   // 树叶要边摆边往后退拉出叶脉：退得不够按比例扣分
-  if (pattern.needBack) score *= 0.35 + 0.65 * Math.min(1, (sim.backTravel || 0) / (pattern.needBack * sim.n / 2));
-  // 要求收尾的图案（郁金香）：没有抬高往前拉线，分数减半
-  if (pattern.needPull && !sim.pulled) score *= 0.5;
+  if (pattern.needBack) factors.back = 0.35 + 0.65 * Math.min(1, (sim.backTravel || 0) / (pattern.needBack * sim.n / 2));
+  // 要求收尾的图案（郁金香、树叶）：没有抬高往前拉线，分数减半
+  if (pattern.needPull && !sim.pulled) factors.pull = 0.5;
   // 图案太小（没倒出多少奶泡）要扣分
-  if (coverage < config.scoreMinCoverage) score *= coverage / config.scoreMinCoverage;
+  if (coverage < config.scoreMinCoverage) factors.small = coverage / config.scoreMinCoverage;
+  for (const f of Object.values(factors)) score *= f;
+  // 心形不扣"没收尾"的分（形状分里已经体现），但没拉线时这是最该提醒的
+  if (!sim.pulled && !factors.pull) factors.pull = 0.6;
+  let tip = null, worst = 0.9;
+  for (const [k, f] of Object.entries(factors)) if (f < worst) { worst = f; tip = k; }
+  if (!tip && score < 70) tip = 'shape';
   score = Math.round(Math.max(0, Math.min(100, score)));
   const tier = score >= config.scoreGood ? TIERS[2] : score >= config.scoreOk ? TIERS[1] : TIERS[0];
-  return { score, tier, iou: +iou.toFixed(3), coverage: +coverage.toFixed(3), notchFill: +notchFill.toFixed(2), layers };
+  return { score, tier, tip, iou: +iou.toFixed(3), coverage: +coverage.toFixed(3), notchFill: +notchFill.toFixed(2), layers };
 }
 
 // 评价档位（文案在 i18n.js）

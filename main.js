@@ -10,7 +10,7 @@ import { PATTERNS, patternById } from './patterns.js';
 import { renderDemo } from './demos.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1021-r38';
+const BUILD = '1021-r39';
 
 const $ = id => document.getElementById(id);
 applyStatic();
@@ -135,11 +135,19 @@ $('startBtn').addEventListener('click', async () => {
       lastResult = { ...r, verdict: v.text, best, patternName: pattern.name[lang] || pattern.name.en };
       $('scoreNum').textContent = r.score;
       $('scoreTier').textContent = v.text;
+      // 扣分最多的那一项给一句提示，告诉玩家下一杯该改什么
+      const tipKey = r.overflow ? 'tipOverflow'
+        : r.tip === 'pull' ? (game.isTilt ? 'tipPullTilt' : 'tipPullTouch')
+        : r.tip === 'shape' ? 'tipShape_' + pattern.id
+        : r.tip ? 'tip' + r.tip[0].toUpperCase() + r.tip.slice(1) : null;
+      $('tipLine').hidden = !tipKey;
+      if (tipKey) $('tipLine').innerHTML = `<b>${t('tipLabel')}</b> ${t(tipKey)}`;
       $('bestLine').textContent = newBest ? t('newBest') : t('best') + ' ' + best;
       $('bestLine').classList.toggle('new', newBest);
       $('result').hidden = false;
       if (!r.overflow) resultSound(r.score, newBest);
       if (r.overflow) count('overflow', 'Overflowed the cup', true);
+      if (r.tip) count(`tip-${pattern.id}-${r.tip}`, `${pattern.id} tip: ${r.tip}`, true);
       if (newBest) count('new-best', 'New personal best', true);
       count('pour-done', 'Finished a pour', true);
       // GoatCounter 按访客去重，同一路径一次访问只算一次；所以用"第几杯"分开记，
