@@ -163,10 +163,23 @@ export class FoamSim {
     const tailAmp = config.liftDragTail * lift;
     const tsig2 = config.liftDragTailRadius * config.liftDragTailRadius;
     const tailCut = tailAmp > 0 ? tsig2 * 6 : 0;
+    // 抬高后奶柱又细又急，扎进液面下面，变成一个"吸口"：周围的奶泡往它这里流（前面的被往回吸、
+    // 两边的往中间收），紧贴它的奶泡沉下去消失，只留下奶柱自己画的一条细白线。
+    // 推推乐每一片被从中间切开、两瓣往回收成尖朝下的花瓣，心形前沿被收窄成尖，都是这样来的
+    const sinkV = config.liftSink * lift;
+    const sinkR2 = config.liftSinkRadius * config.liftSinkRadius;
+    const absorb = config.liftAbsorb * lift * dt;
+    const absR2 = config.liftAbsorbRadius * config.liftAbsorbRadius;
+    const dragK = 1 - config.liftDragCut * lift;
+    // 尾流：奶柱已经划过的那条线上，奶泡往回（拉花缸方向）倒流，越靠近线越强、离奶柱越远越弱。
+    // 推推乐划过之后每一片中间被往回带成尖朝下的花瓣；心形两瓣中间被往回带、凹口更深
+    const wakeV = speed > 20 ? config.liftWake * lift : 0;
+    const wakeW2 = config.liftWakeWidth * config.liftWakeWidth;
+    const wakeL = config.liftWakeLength;
 
     // 只算"已有奶泡的范围 + 奶柱周围"：别处全是 0，搬运后还是 0
     const pad = vmax + 2;
-    const reachS = Math.max(config.dragRadius, config.jetRadius) * 3 + config.streamRadius + config.surfaceAhead + 2;
+    const reachS = Math.max(config.dragRadius, config.jetRadius, config.liftSinkRadius) * 3 + config.streamRadius + config.surfaceAhead + 2;
     let bx0 = Math.floor(Math.min(src.x, ox) - reachS), by0 = Math.floor(Math.min(src.y, oy) - reachS);
     let bx1 = Math.ceil(Math.max(src.x, ox) + reachS), by1 = Math.ceil(Math.max(src.y, oy) + reachS);
     if (this.box) {
@@ -196,7 +209,12 @@ export class FoamSim {
         const sdx = x - src.x, sdy = y - src.y;
         const s2 = sdx * sdx + sdy * sdy;
         if (s2 < dragCut || s2 < tailCut) {
-          let g = s2 < dragCut ? Math.exp(-s2 / dsig2) * drag : 0;
+          let g = s2 < dragCut ? Math.exp(-s2 / dsig2) * drag * dragK : 0;
+          // 抬高收尾时只有奶柱前面被往前推（拖出心尖），已经划过的身后不再往前拖，交给尾流往回带
+          if (lift > 0 && g > 0) {
+            const along = sdx * tx + sdy * ty;
+            if (along < 0) g *= 1 - lift * (1 - Math.exp(-(along * along) / (dsig2 * config.liftDragBehind)));
+          }
           if (tailAmp > 0) g += Math.exp(-s2 / tsig2) * tailAmp;
           ux += src.vx * g;
           uy += src.vy * g;
@@ -209,6 +227,23 @@ export class FoamSim {
           const g = Math.exp(-s2 / qsig2) * squeeze / config.liftSqueezeRadius * front;
           ux += ty * off * g;
           uy += -tx * off * g;
+        }
+        if (wakeV > 0) {
+          const along = sdx * tx + sdy * ty;
+          if (along < 0 && along > -wakeL * 4) {
+            const off = -sdx * ty + sdy * tx;
+            // 紧跟在奶柱后面的一小段不倒流（刚拖出来的心尖不会被拉回去），再往后才开始
+            const start = 1 - Math.exp(-((along / config.liftWakeGap) ** 2));
+            const g = wakeV * Math.exp(-(off * off) / wakeW2) * Math.exp(along / wakeL) * start;
+            ux -= tx * g;
+            uy -= ty * g;
+          }
+        }
+        if (sinkV > 0 && s2 < sinkR2 * 9) {
+          const r = Math.sqrt(s2) + 1;
+          const g = Math.exp(-s2 / sinkR2) * sinkV / r;
+          ux -= sdx * g;
+          uy -= sdy * g;
         }
         if (jet > 0 && s2 < jsig2 * 9) {
           const g = Math.exp(-s2 / jsig2) * jet;
@@ -245,6 +280,7 @@ export class FoamSim {
           v += sharpen * (v - mid);
           v = v < 0 ? 0 : v > floor ? floor : v;
         }
+        if (absorb > 0 && s2 < absR2 * 9) v *= Math.max(0, 1 - absorb * Math.exp(-s2 / absR2));
         tmp[i] = v;
         // p×d 跟着 d 同比例变化，保证 p 本身不变
         ptmp[i] = v0 > 1e-4 ? sample(p, n, sx, sy) * (v / v0) : 0;

@@ -99,6 +99,16 @@ export const config = {
   dragStrength: 1.0,      // 奶柱拖着周围奶泡跟着走的强度，1 = 跟奶柱同速
   dragRadius: 11,         // 拖曳影响范围（格）
   liftDragNarrow: 0.7,    // 抬高收尾时奶柱正下方的拖曳范围缩到原来的这个比例
+  liftSink: 0,          // 抬高后奶柱"吸口"往里吸的速度（格/秒）
+  liftSinkRadius: 9,      // 吸口影响范围（格）
+  liftAbsorb: 0,         // 紧贴吸口的奶泡沉下去的速度（每秒）
+  liftAbsorbRadius: 3,    // 沉下去的范围（格）
+  liftWake: 300,          // 尾流往回带的速度（格/秒）
+  liftWakeWidth: 6,       // 尾流宽度（格）
+  liftWakeGap: 25,        // 奶柱身后多远才开始倒流（格）
+  liftWakeLength: 70,     // 尾流在奶柱身后延续多远（格）
+  liftDragBehind: 0.15,   // 奶柱身后还被往前拖的范围（越小 = 一过奶柱就不拖了）
+  liftDragCut: 0,       // 抬高后奶柱往前拖奶泡的力减掉多少（1 = 完全不拖）
   liftDragTail: 0.1,     // 抬高收尾时外圈被整体带动的强度（相对奶柱速度）
   liftDragTailRadius: 35, // 外圈带动的范围（格）
   liftSqueeze: 0.4,       // 抬高收尾时把两侧奶泡往中线压的强度
