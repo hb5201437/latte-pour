@@ -418,7 +418,7 @@ export class FoamSim {
         }
         if (w > 0) {
           const dark = Math.exp(-(rs - sr) / 10) * 0.25;
-          const wr = 232 * (1 - dark), wg = 224 * (1 - dark), wb = 212 * (1 - dark);
+          const wr = 205 * (1 - dark), wg = 191 * (1 - dark), wb = 170 * (1 - dark);
           R0 += (wr - R0) * w; G0 += (wg - G0) * w; B0 += (wb - B0) * w;
         }
       }

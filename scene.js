@@ -187,3 +187,80 @@ export function drawSpill(g, cx, cy, R, angle, t, seed = 3) {
   g.stroke();
   g.restore();
 }
+
+// —— 视频角度：米色斑点粗陶杯（没有杯碟，从拉花缸这一侧斜着往下看）——
+
+// 斑点纹理（画一次复用）
+let speckle = null;
+function speckleCanvas() {
+  if (speckle) return speckle;
+  const S = 256;
+  speckle = document.createElement('canvas');
+  speckle.width = speckle.height = S;
+  const g = speckle.getContext('2d');
+  g.fillStyle = '#e6dccd';
+  g.fillRect(0, 0, S, S);
+  let s = 5;
+  const rnd = () => ((s = (s * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 1400; i++) {
+    const r = rnd() < 0.85 ? 0.5 + rnd() * 0.9 : 1.2 + rnd() * 1.4;
+    g.fillStyle = `rgba(${90 + rnd() * 40},${70 + rnd() * 30},${55 + rnd() * 25},${0.35 + rnd() * 0.5})`;
+    g.beginPath();
+    g.arc(rnd() * S, rnd() * S, r, 0, Math.PI * 2);
+    g.fill();
+  }
+  return speckle;
+}
+
+// 杯身：靠近镜头这一侧露出来的外壁。rimSq 是杯口的扁度，bodyH 是露出来的杯身高度（像素）
+// 杯口中心在 (cx, cy)，外半径 R * 1.1
+export function drawStoneBody(g, cx, cy, R, rimSq, bodyH) {
+  const Ro = R * 1.1, Rb = R * 1.0; // 杯底比杯口略窄
+  g.save();
+  // 影子
+  g.save();
+  g.shadowColor = 'rgba(0,0,0,0.45)';
+  g.shadowBlur = R * 0.25;
+  g.shadowOffsetY = R * 0.12;
+  g.beginPath();
+  g.ellipse(cx, cy + bodyH, Rb, Rb * rimSq, 0, 0, Math.PI * 2);
+  g.fillStyle = 'rgba(0,0,0,0.6)';
+  g.fill();
+  g.restore();
+  // 外壁：杯口下半个椭圆 → 杯底下半个椭圆
+  g.beginPath();
+  g.ellipse(cx, cy, Ro, Ro * rimSq, 0, 0, Math.PI, false);
+  g.lineTo(cx - Rb, cy + bodyH);
+  g.ellipse(cx, cy + bodyH, Rb, Rb * rimSq, 0, Math.PI, 0, true);
+  g.closePath();
+  g.fillStyle = g.createPattern(speckleCanvas(), 'repeat');
+  g.fill();
+  // 圆柱的明暗：两侧暗、偏左一道高光
+  const sh = g.createLinearGradient(cx - Ro, 0, cx + Ro, 0);
+  sh.addColorStop(0, 'rgba(40,25,15,0.45)');
+  sh.addColorStop(0.3, 'rgba(255,250,240,0.12)');
+  sh.addColorStop(0.55, 'rgba(0,0,0,0)');
+  sh.addColorStop(1, 'rgba(40,25,15,0.5)');
+  g.fillStyle = sh;
+  g.fill();
+  g.restore();
+}
+
+// 杯口：一圈粗陶边（俯视的正圆，调用方按杯口扁度压扁）
+export function drawStoneRim(g, cx, cy, R) {
+  const Ro = R * 1.1;
+  g.save();
+  g.beginPath();
+  g.arc(cx, cy, Ro, 0, Math.PI * 2);
+  g.arc(cx, cy, R * 0.985, 0, Math.PI * 2, true);
+  g.fillStyle = g.createPattern(speckleCanvas(), 'repeat');
+  g.fill('evenodd');
+  // 边沿圆润：外圈暗、中间亮
+  const rg = g.createRadialGradient(cx, cy, R * 0.985, cx, cy, Ro);
+  rg.addColorStop(0, 'rgba(60,40,25,0.35)');
+  rg.addColorStop(0.45, 'rgba(255,252,245,0.25)');
+  rg.addColorStop(1, 'rgba(60,40,25,0.3)');
+  g.fillStyle = rg;
+  g.fill('evenodd');
+  g.restore();
+}

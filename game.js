@@ -4,7 +4,7 @@ import { Pour } from './pour.js';
 import { TiltInput } from './tilt.js';
 import { lockScreenAngle, unlockScreenAngle } from './sensors.js';
 import { drawPitcher } from './pitcher.js';
-import { drawTable, drawCup, drawLiquidGloss, drawSpill } from './scene.js';
+import { drawTable, drawLiquidGloss, drawSpill, drawStoneBody, drawStoneRim } from './scene.js';
 import { updatePour, splash } from './audio.js';
 import { scorePour } from './score.js';
 import { t } from './i18n.js';
@@ -30,6 +30,17 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   // 静止图层（布局变化时画一次）：木桌 + 杯碟 + 杯子；液面光泽
   const sceneLayer = document.createElement('canvas');
   const glossLayer = document.createElement('canvas');
+  const rimLayer = document.createElement('canvas');
+  // 镜头像视频一样从拉花缸这一侧斜着往下看：液面是水平的，看起来是固定扁度的椭圆；
+  // 杯口跟着杯子倾斜，杯子朝拉花缸斜的时候杯口更接近正圆，回杯后变扁
+  let sqL = 1, sqR = 1, bodyH = 0;
+  function updateView() {
+    const cam = config.cameraAngle * Math.PI / 180;
+    const tilt = (1 - sim.surface().level) * config.cupTiltMax * Math.PI / 180;
+    sqL = Math.cos(cam);
+    sqR = Math.cos(Math.max(0, cam - tilt));
+    bodyH = config.cupDepth * R * Math.sin(Math.max(0, cam - tilt));
+  }
   let state = 'ready'; // ready | pouring | done
   let elapsed = 0;
   let last = 0;
@@ -73,7 +84,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
     // 杯子上方留出杯碟，下方留出拉花缸（缸身 + 把手）的位置
-    const above = 1.36, below = 2.0;
+    const above = 1.15, below = 2.0;
     R = Math.min(W * config.cupRadiusFrac, (H - 24) / (above + below));
     cx = W / 2;
     cy = (H - (above + below) * R) / 2 + above * R;
@@ -83,7 +94,11 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     const sc = sceneLayer.getContext('2d');
     sc.setTransform(dpr, 0, 0, dpr, 0, 0);
     drawTable(sc, W, H);
-    drawCup(sc, cx, cy, R);
+
+    rimLayer.width = rimLayer.height = Math.ceil(2.3 * R * dpr);
+    const rc = rimLayer.getContext('2d');
+    rc.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawStoneRim(rc, 1.15 * R, 1.15 * R, R);
 
     glossLayer.width = glossLayer.height = Math.ceil(2 * R * dpr);
     const gc = glossLayer.getContext('2d');
@@ -116,7 +131,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   canvas.addEventListener('pointermove', e => {
     if (!drag || e.pointerId !== drag.id || state === 'done' || pulling) return;
     const k = n / (2 * R);
-    [entry.x, entry.y] = clampToCup(drag.ex + (e.clientX - drag.x) * k, drag.ey + (e.clientY - drag.y) * k);
+    [entry.x, entry.y] = clampToCup(drag.ex + (e.clientX - drag.x) * k, drag.ey + (e.clientY - drag.y) * k / sqL);
   });
   const release = e => {
     if (!drag || e.pointerId !== drag.id) return;
@@ -273,38 +288,60 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     // 溢出时轻微一震
     if (shake > 0) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
 
-    // 木桌、杯碟、杯子（预先画好的）
+    // 木桌（预先画好的）
     ctx.drawImage(sceneLayer, 0, 0, W, H);
+    updateView();
 
-    // 液面
-    sim.render(img.data);
-    offCtx.putImageData(img, 0, 0);
+    // 杯身（靠近镜头这一侧的外壁）
+    drawStoneBody(ctx, cx, cy, R, sqR, bodyH);
+
+    // 杯口里面：先铺一层内壁颜色（杯口比液面圆，上下露出来的是内壁），再画液面
     ctx.save();
     ctx.beginPath();
-    ctx.arc(cx, cy, R, 0, Math.PI * 2);
+    ctx.ellipse(cx, cy, R, R * sqR, 0, 0, Math.PI * 2);
+    ctx.clip();
+    const wallG = ctx.createLinearGradient(0, cy - R * sqR, 0, cy + R * sqR);
+    wallG.addColorStop(0, '#d6c9b5');
+    wallG.addColorStop(0.5, '#cdbfaa');
+    wallG.addColorStop(1, '#c4b49c');
+    ctx.fillStyle = wallG;
+    ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+    // 液面：水平的，按镜头角度压扁
+    sim.render(img.data);
+    offCtx.putImageData(img, 0, 0);
+    ctx.beginPath();
+    ctx.ellipse(cx, cy, R, R * sqL, 0, 0, Math.PI * 2);
     ctx.clip();
     // 奶泡边缘已经抗锯齿过，普通双线性放大就够，比"最高质量"快十几倍
     ctx.imageSmoothingEnabled = true;
     ctx.imageSmoothingQuality = 'low';
-    ctx.drawImage(off, cx - R, cy - R, 2 * R, 2 * R);
+    ctx.drawImage(off, cx - R, cy - R * sqL, 2 * R, 2 * R * sqL);
+    ctx.drawImage(glossLayer, cx - R, cy - R * sqL, 2 * R, 2 * R * sqL);
     ctx.restore();
-    ctx.drawImage(glossLayer, cx - R, cy - R, 2 * R, 2 * R);
+
+    // 杯口粗陶边（按杯口扁度压扁）
+    ctx.drawImage(rimLayer, cx - 1.15 * R, cy - 1.15 * R * sqR, 2.3 * R, 2.3 * R * sqR);
 
     // 杯满程度环：倒得越多越满，快满时变红，提醒该收尾了
     if (state !== 'ready') {
       const f = Math.min(1, poured / config.cupCapacity);
       ctx.beginPath();
-      ctx.arc(cx, cy, R * 1.06, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2);
-      ctx.strokeStyle = f > 0.85 ? 'rgba(200,60,40,0.85)' : 'rgba(120,80,50,0.55)';
-      ctx.lineWidth = R * 0.025;
+      ctx.ellipse(cx, cy, R * 1.05, R * 1.05 * sqR, 0, -Math.PI / 2, -Math.PI / 2 + f * Math.PI * 2);
+      ctx.strokeStyle = f > 0.85 ? 'rgba(200,60,40,0.8)' : 'rgba(90,60,40,0.35)';
+      ctx.lineWidth = R * 0.03;
       ctx.lineCap = 'round';
       ctx.stroke();
     }
 
     // 溢出：咖啡和奶泡从倒奶那一侧漫过杯沿，流到杯碟上
-    if (spill) drawSpill(ctx, cx, cy, R, spill.angle, spill.t, spill.seed);
+    if (spill) {
+      ctx.save();
+      ctx.translate(cx, cy); ctx.scale(1, sqR); ctx.translate(-cx, -cy);
+      drawSpill(ctx, cx, cy, R * 1.1, spill.angle, spill.t, spill.seed);
+      ctx.restore();
+    }
 
-    const toScreen = (gx, gy) => [cx - R + (gx / n) * 2 * R, cy - R + (gy / n) * 2 * R];
+    const toScreen = (gx, gy) => [cx - R + (gx / n) * 2 * R, cy + ((gy / n) * 2 * R - R) * sqL];
 
     // 入点：拉花缸还没倒时，在液面上标出缸嘴对准的位置
     const [sx, sy] = toScreen(p.x, p.y);
