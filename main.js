@@ -14,7 +14,7 @@ const forceTouch = params.get('mode') === 'touch';
 
 const HINTS = {
   tilt: '横握手机，屏幕上沿往前压开始倒奶 · 左右摇晃出千层纹 · 最后向前一推收尾',
-  touch: '在杯子上半部按住倒奶 · 按住时左右来回晃出千层纹 · 最后快速向下一划穿过收尾',
+  touch: '在杯子下半部按住倒奶 · 按住时左右来回晃出千层纹 · 最后快速向上一划穿过收尾',
 };
 
 const FALLBACK_NOTE = {
