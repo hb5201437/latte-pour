@@ -100,18 +100,24 @@ export class FoamSim {
     const age = config.foamAgeRate * dt;
     const sharpen = config.edgeSharpen * dt;
     const mid = (config.edgeLo + config.edgeHi) / 2;
-    const biasFront = config.forwardBias, biasBack = config.backPull;
+    // 左右摆的时候，每一层奶泡从奶柱落点冒出来、被下一层往前推（视频里千层就是这样一层层长出来的），
+    // 所以摆得越厉害，往前推得越猛、往后收得越紧
+    const wig = src.wiggle ?? 0;
+    const biasFront = config.forwardBias + wig * config.wiggleFrontBias;
+    const biasBack = config.backPull + wig * config.wiggleBackPull;
+    const cone = wig * config.wiggleCone;
     const fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
     // 奶钻到液面下，在落点前方浮上来（ox, oy），奶泡从那里往外长。
     // 奶泡越大、流量越大，浮出点离落点越远；抬高收流时奶泡就在落点旁边冒出来，往两侧包成两瓣
     if (src.q > 0) this.area += src.q * dt;
     // 左右晃的时候奶柱一直在动、钻不深，奶泡就在落点附近冒出来，纹路因此在奶柱处收拢
-    const ahead = config.surfaceAhead + config.surfaceAheadFrac * Math.sqrt(this.area / Math.PI) *
-      Math.pow(src.q / config.flowMax, config.surfaceAheadFlowExp) * (1 - config.wiggleAheadCut * (src.wiggle ?? 0));
+    const ahead = (config.surfaceAhead + config.surfaceAheadFrac * Math.sqrt(this.area / Math.PI) *
+      Math.pow(src.q / config.flowMax, config.surfaceAheadFlowExp)) * (1 - config.wiggleAheadCut * (src.wiggle ?? 0));
     const ox = src.x + fx * ahead, oy = src.y + fy * ahead;
     // 奶柱本身往前冲，把落点后面的咖啡卷进奶泡后缘，自然形成心形上方的凹口
     // 抬高后奶柱更细但落得更猛，冲力不减，把凹口扎深
-    const jet = config.jetSpeed * Math.max(src.q / config.flowMax, (src.lift ?? 0) * config.liftJet);
+    const jet = config.jetSpeed * Math.max(src.q / config.flowMax, (src.lift ?? 0) * config.liftJet) *
+      (1 + (src.wiggle ?? 0) * config.wiggleJetBoost);
     const jr = config.jetRadius * (1 + config.liftJetWiden * (src.lift ?? 0));
     const jsig2 = jr * jr;
     // 抬高收尾：奶柱拖曳范围变窄，并把两侧奶泡往奶柱的路径上压
@@ -149,7 +155,10 @@ export class FoamSim {
         const r2 = dx * dx + dy * dy + 1;
         // 前方多推一点、后方往回收，落点因此留在奶泡后缘
         const cos = (dx * fx + dy * fy) / Math.sqrt(r2);
-        const push = 1 + cos * (cos > 0 ? biasFront : biasBack);
+        let push = 1 + cos * (cos > 0 ? biasFront : biasBack);
+        // 摆动时奶泡往前方扇形里推（两侧几乎不横铺），每一层都是两端收在奶柱上的弧
+        // π·max(0,cos) 绕一圈的平均值是 1，和原来的推力总量一样
+        if (cone > 0) push += (Math.PI * Math.max(0, cos) - push) * cone;
         let ux = (k * push * dx) / r2;
         let uy = (k * push * dy) / r2;
         const sdx = x - src.x, sdy = y - src.y;
@@ -269,13 +278,14 @@ export class FoamSim {
           const pc = p[i] / v;
           const gx = (ph(i + 1) - ph(i - 1)) / 2, gy = (ph(i + n) - ph(i - n)) / 2;
           const g = Math.hypot(gx, gy);
-          if (g > 1e-4 && g < 0.6) {
+          if (g > 1e-4 && g < config.lineFadeHi) {
             // 换算成格：离线中心多少格、线半宽多少格（被拉得很开的地方也不超过上限，保持细线）
             const distCells = Math.abs(pc - Math.round(pc)) / g;
             const hw = Math.min(halfBand / g, config.lineMaxHalfWidth);
             la = (1 - smoothstep(hw - 0.8, hw + 0.8, distCells)) * lineStrength;
-            // 刚倒下去还没被推开的地方（梯度很大）不画，避免落点附近一团乱线
-            la *= 1 - smoothstep(0.25, 0.6, g);
+            // 线挤得太密的地方（相位梯度很大，就在落点上）渐隐，免得糊成一团；
+            // 但不能隐得太早，视频里层层弧线是一直收进奶柱的
+            la *= 1 - smoothstep(config.lineFadeLo, config.lineFadeHi, g);
           }
         }
       }

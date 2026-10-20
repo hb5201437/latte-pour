@@ -46,9 +46,15 @@ export const config = {
   wiggleCenterTauMs: 300, // 晃动中线的平滑时间
   wiggleFullSpeed: 80,    // 横向速度达到这个（格/秒）算"晃得很厉害"
   wiggleTauMs: 250,       // 晃动强度的平滑时间
-  wiggleAheadCut: 0,   // 晃得厉害时，奶泡浮出点往落点收的比例
+  wiggleAheadCut: 1.0,    // 晃得厉害时，奶泡浮出点往落点收的比例（千层从奶柱处一层层冒出来）
+  wiggleFrontBias: 0.3,   // 晃得厉害时，额外往前推的力
+  wiggleBackPull: 0,      // 晃得厉害时，额外往后收的力
+  wiggleCone: 0,          // 晃得厉害时奶泡集中往前方扇形里推的程度（0 = 四面铺开；视频里是以落点为圆心一圈圈长）
+  wiggleJetBoost: -0.5,   // 晃得厉害时奶柱往前冲的力变化（-0.5 = 减半）：冲力小，一圈圈的圆心才留在落点上
   crossingsPerLine: 2,    // 晃过中线几次出一条线；2 = 左右来回一次一条
   lineFrac: 0.28,         // 千层纹咖啡色带占每层间距的比例
+  lineFadeLo: 0.5,        // 层间距挤到每格跨过这么多层时开始渐隐（落点处线最密）
+  lineFadeHi: 1.2,        // ……到这么多层时完全不画
   lineMaxHalfWidth: 1.6,  // 千层纹线的最大半宽（格），被拉开的地方也保持细线
   lineStrength: 0.85,     // 千层纹颜色深浅，1 = 完全是浅咖啡色
 
@@ -59,7 +65,11 @@ export const config = {
   // —— 评分（第4步）——
   scoreIouZero: 0.62,     // 和心形模板的重叠率低于这个记 0 分
   scoreIouFull: 0.84,     // 重叠率达到这个记 100 分
-  scoreTipWeight: 0.4,    // 心尖那一段的重叠率在总分里的权重
+  scoreTipWeight: 0.3,    // 心尖那一段的重叠率在总分里的权重
+  scoreBackWeight: 0.3,   // 两瓣和凹口那一段的重叠率在总分里的权重
+  scoreNotchPenalty: 0.8, // 凹口被奶泡填满时最多扣掉的比例（平底一团没有心形凹口）
+  scoreNotchWidth: 0.12,  // 检查凹口的区域宽度（占心宽一半的比例）
+  scoreNotchFree: 0.45,   // 凹口区域被填到这个比例以内不扣分
   scoreMinCoverage: 0.08, // 奶泡占杯面不到这个比例要按比例扣分
   scoreOk: 40,            // 达到这个分数评价"有点像了"
   scoreGood: 70,          // 达到这个分数评价"漂亮"

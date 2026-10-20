@@ -63,33 +63,54 @@ export function scorePour(sim) {
   for (const [x, y] of TEMPLATE) {
     x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y);
   }
-  // 整体重叠率 + 心尖那一段（前方 1/3）的重叠率。
-  // 没收尾的一团圆整体也挺像心（奶柱会冲出凹口），区别主要在有没有拉出尖
+  // 整体重叠率 + 心尖那一段（前方 1/3）+ 两瓣和凹口那一段（后方 1/3）的重叠率。
+  // 没收尾的一团圆整体也挺像心，区别在有没有拉出尖；乱晃出来的平底一团，区别在有没有凹口
   const fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
   let tipStart = Infinity, tipEnd = -Infinity;
   for (const [x, y] of TEMPLATE) { const a = x * fx + y * fy; tipStart = Math.min(tipStart, a); tipEnd = Math.max(tipEnd, a); }
-  tipStart = tipEnd - (tipEnd - tipStart) / 3;
-  let inter = 0, tArea = 0, fInter = 0, fT = 0, fM = 0;
+  const span = tipEnd - tipStart;
+  const backEnd = tipStart + span / 3;
+  tipStart = tipEnd - span / 3;
+  let inter = 0, tArea = 0, fInter = 0, fT = 0, fM = 0, bInter = 0, bT = 0, bM = 0;
+  // 凹口：两瓣中间、模板外面的那一小块。好的心那里是咖啡色，被奶泡填满说明没有凹口
+  const lx = -fy, ly = fx;
+  let halfW = 0;
+  for (const [x, y] of TEMPLATE) halfW = Math.max(halfW, Math.abs(x * lx + y * ly));
+  let notchCells = 0, notchFilled = 0;
   for (let y = 0; y < G; y++) {
     for (let x = 0; x < G; x++) {
       const ux = (x - cx) / scale, uy = (y - cy) / scale;
       const m = mask[y * G + x];
       const t = ux >= x0 && ux <= x1 && uy >= y0 && uy <= y1 && inside(TEMPLATE, ux, uy);
       if (t) { tArea++; if (m) inter++; }
-      if (ux * fx + uy * fy > tipStart) { if (t) fT++; if (m) fM++; if (t && m) fInter++; }
+      const along = ux * fx + uy * fy;
+      if (along > tipStart) { if (t) fT++; if (m) fM++; if (t && m) fInter++; }
+      if (along < backEnd) {
+        if (t) bT++; if (m) bM++; if (t && m) bInter++;
+        if (!t && along > tipStart - span && Math.abs(ux * lx + uy * ly) < halfW * config.scoreNotchWidth &&
+            ux >= x0 && ux <= x1 && uy >= y0 && uy <= y1) {
+          notchCells++;
+          if (m) notchFilled++;
+        }
+      }
     }
   }
   const whole = inter / (area + tArea - inter);
   const front = fInter / Math.max(1, fT + fM - fInter);
-  const iou = (1 - config.scoreTipWeight) * whole + config.scoreTipWeight * front;
+  const back = bInter / Math.max(1, bT + bM - bInter);
+  const iou = (1 - config.scoreTipWeight - config.scoreBackWeight) * whole +
+    config.scoreTipWeight * front + config.scoreBackWeight * back;
 
   // 重叠率换成分数：没收尾的一团圆约 0.75（60 分左右），拉得好的心约 0.8 以上
   let score = ((iou - config.scoreIouZero) / (config.scoreIouFull - config.scoreIouZero)) * 100;
+  // 凹口被填满要扣分（大白心的凹口本来就窄，填到一半以内不算）
+  const notchFill = notchCells ? notchFilled / notchCells : 0;
+  score *= 1 - config.scoreNotchPenalty * Math.max(0, (notchFill - config.scoreNotchFree) / (1 - config.scoreNotchFree));
   // 图案太小（没倒出多少奶泡）要扣分
   if (coverage < config.scoreMinCoverage) score *= coverage / config.scoreMinCoverage;
   score = Math.round(Math.max(0, Math.min(100, score)));
   const tier = score >= config.scoreGood ? TIERS[2] : score >= config.scoreOk ? TIERS[1] : TIERS[0];
-  return { score, tier, iou: +iou.toFixed(3), coverage: +coverage.toFixed(3) };
+  return { score, tier, iou: +iou.toFixed(3), coverage: +coverage.toFixed(3), notchFill: +notchFill.toFixed(2) };
 }
 
 const TIERS = ['再试试', '有点像了', '漂亮'];
