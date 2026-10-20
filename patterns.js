@@ -2,16 +2,16 @@
 // 轮廓都在"心尖朝前方"的局部坐标里定义：y 轴朝前（心尖方向），x 轴横向；评分时会对齐、缩放。
 
 // 心形：经典心形曲线，拉花的心比扑克牌的心圆一点、两瓣浅一点
-function heartOutline(stretch = 1) {
-  const pts = [];
-  for (let i = 0; i < 240; i++) {
-    const t = (i / 240) * Math.PI * 2;
-    const x = 16 * Math.sin(t) ** 3;
-    const y = 13 * Math.cos(t) - 4 * Math.cos(2 * t) - 1.6 * Math.cos(3 * t) - 0.8 * Math.cos(4 * t);
-    // 数学坐标里心尖在下；翻过来让心尖朝"前"（+y），再按需要拉长
-    pts.push([x, -y * stretch]);
-  }
-  return pts;
+// 心形：每一列的后沿（两瓣和凹口）和前沿（圆顶收成尖）。取自大白心和千层心示范倒法的平均（左右对称后量的）
+function heartOutline() {
+  const cols = [[0, -0.27, 0.62], [0.04, -0.29, 0.59], [0.08, -0.34, 0.53], [0.12, -0.39, 0.51], [0.16, -0.43, 0.49],
+    [0.2, -0.47, 0.47], [0.24, -0.49, 0.46], [0.28, -0.5, 0.43], [0.32, -0.5, 0.41], [0.36, -0.49, 0.38],
+    [0.4, -0.48, 0.35], [0.44, -0.46, 0.3], [0.48, -0.43, 0.25], [0.52, -0.38, 0.2], [0.56, -0.34, 0.13], [0.6, -0.29, 0.04]];
+  const right = cols.slice(1);
+  const left = right.slice().reverse().map(([x, b, f]) => [-x, b, f]);
+  const all = [...left, cols[0], ...right];
+  // 前沿从左到右，侧边收口，后沿从右到左
+  return [...all.map(([x, , f]) => [x, f]), [0.63, -0.13], ...all.slice().reverse().map(([x, b]) => [x, b]), [-0.63, -0.13]];
 }
 
 // 树叶（rosetta）：圆圆的扇形底纹，往拉花缸那头收窄。半宽剖面取自对照视频调好的示范倒法（闭合缝隙后量的）
@@ -46,7 +46,9 @@ export const PATTERNS = [
   {
     id: 'heart',
     name: { en: 'Heart', zh: '心形' },
-    outline: heartOutline(1),
+    outline: heartOutline(),
+    iouZero: 0.7,
+    iouFull: 0.95,
     layers: 0, // 不要求分层（千层心也算）
     notch: true,
     startBack: 0.45,

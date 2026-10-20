@@ -152,7 +152,9 @@ export function scorePour(sim, pattern) {
 
   // 重叠率换成分数：没收尾的一团圆约 0.75（60 分左右），拉得好的心约 0.8 以上
   // 先封顶到 100 再扣分，否则超出 100 的部分会把扣分抵掉
-  let score = Math.min(100, ((iou - config.scoreIouZero) / (config.scoreIouFull - config.scoreIouZero)) * 100);
+  // 模板是照着示范倒法量的图案（心形），重叠率普遍更高，可以单独设分数区间
+  const iouZero = pattern.iouZero ?? config.scoreIouZero, iouFull = pattern.iouFull ?? config.scoreIouFull;
+  let score = Math.min(100, ((iou - iouZero) / (iouFull - iouZero)) * 100);
   // 凹口被填满要扣分（大白心的凹口本来就窄，填到一半以内不算）；树叶没有凹口，不查
   const notchFill = notchCells ? notchFilled / notchCells : 0;
   if (pattern.notch) score *= 1 - config.scoreNotchPenalty * Math.max(0, (notchFill - config.scoreNotchFree) / (1 - config.scoreNotchFree));
