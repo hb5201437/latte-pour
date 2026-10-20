@@ -151,13 +151,16 @@ export function scorePour(sim, pattern) {
     config.scoreTipWeight * front + config.scoreBackWeight * back;
 
   // 重叠率换成分数：没收尾的一团圆约 0.75（60 分左右），拉得好的心约 0.8 以上
-  let score = ((iou - config.scoreIouZero) / (config.scoreIouFull - config.scoreIouZero)) * 100;
+  // 先封顶到 100 再扣分，否则超出 100 的部分会把扣分抵掉
+  let score = Math.min(100, ((iou - config.scoreIouZero) / (config.scoreIouFull - config.scoreIouZero)) * 100);
   // 凹口被填满要扣分（大白心的凹口本来就窄，填到一半以内不算）；树叶没有凹口，不查
   const notchFill = notchCells ? notchFilled / notchCells : 0;
   if (pattern.notch) score *= 1 - config.scoreNotchPenalty * Math.max(0, (notchFill - config.scoreNotchFree) / (1 - config.scoreNotchFree));
   // 分层不够要扣分：郁金香要叠够层数，树叶要摇出够多的纹路
   const need = pattern.pieces || pattern.layers;
   if (need) score *= 0.35 + 0.65 * Math.min(1, layers / need);
+  // 树叶要边摆边往后退拉出叶脉：退得不够按比例扣分
+  if (pattern.needBack) score *= 0.35 + 0.65 * Math.min(1, (sim.backTravel || 0) / (pattern.needBack * sim.n / 2));
   // 要求收尾的图案（郁金香）：没有抬高往前拉线，分数减半
   if (pattern.needPull && !sim.pulled) score *= 0.5;
   // 图案太小（没倒出多少奶泡）要扣分

@@ -58,7 +58,7 @@ export const config = {
   wiggleTauMs: 250,       // 晃动强度的平滑时间
   wiggleAheadCut: 1.0,    // 晃得厉害时，奶泡浮出点往落点收的比例（千层从奶柱处一层层冒出来）
   wiggleFrontBias: 0.3,   // 晃得厉害时，额外往前推的力
-  wiggleBackPull: 0,      // 晃得厉害时，额外往后收的力
+  wiggleBackPull: -0.75,  // 晃得厉害时回收力减掉多少：负数 = 摆动时往四面长（树叶的底纹包住叶脉）
   wiggleCone: 0,          // 晃得厉害时奶泡集中往前方扇形里推的程度（0 = 四面铺开；视频里是以落点为圆心一圈圈长）
   wiggleJetBoost: -0.5,   // 晃得厉害时奶柱往前冲的力变化（-0.5 = 减半）：冲力小，一圈圈的圆心才留在落点上
   wallWidth: 16,          // 杯壁影响范围（格）：奶泡离液面边缘这么近时开始被挡住，改沿杯壁往两侧流
@@ -108,7 +108,7 @@ export const config = {
   jetRadius: 6,           // 奶柱冲力影响范围（格）
   streamRadius: 3,        // 奶柱落点注入白色的半径（格）
   dragStrength: 1.0,      // 奶柱拖着周围奶泡跟着走的强度，1 = 跟奶柱同速
-  dragRadius: 11,         // 拖曳影响范围（格）
+  dragRadius: 6,         // 拖曳影响范围（格）
   liftDragNarrow: 0.7,    // 抬高收尾时奶柱正下方的拖曳范围缩到原来的这个比例
   liftSink: 0,          // 抬高后奶柱"吸口"往里吸的速度（格/秒）
   liftSinkRadius: 9,      // 吸口影响范围（格）

@@ -24,6 +24,8 @@ export class FoamSim {
     this.inside = new Uint8Array(n * n);
     this.fusion = 0; // 融合进度 0~1，表面变浅的程度
     this.vol = 0;
+    this.backTravel = 0; // 出奶时往后退了多远（格）
+    this.backStart = null;
     this.area = 0;
     this.box = null;
     this.bg = new Uint8ClampedArray(n * n * 3);
@@ -53,6 +55,8 @@ export class FoamSim {
     this.k.fill(0);
     this.vol = 0;
     this.pulled = false;
+    this.backTravel = 0;
+    this.backStart = null;
     this.lastOx = this.lastOy = null;
     this.fusion = 0;
     this.vol = 0;    // 倒进杯子的总量（满流量倒 1 秒 = 1），决定杯子放平到什么程度
@@ -113,6 +117,13 @@ export class FoamSim {
     const prevR = this.surface().r;
     // 记下有没有抬高往前拉过线（郁金香要求收尾）
     if ((src.lift ?? 0) > 0.8 && Math.hypot(src.vx, src.vy) > 60) this.pulled = true;
+    // 记下出奶时比开始出奶的位置最多往后退了多远（格）：树叶的叶脉就是这样拉出来的。
+    // 用净位移，手抖来回晃不会累加
+    if (src.q > config.flowMax * 0.2 && (src.lift ?? 0) < 0.5) {
+      const back = -(src.x * Math.cos(config.forwardAngle) + src.y * Math.sin(config.forwardAngle));
+      if (this.backStart == null) this.backStart = back;
+      this.backTravel = Math.max(this.backTravel, back - this.backStart);
+    }
     if (src.q > 0) this.vol += (src.q / config.flowMax) * dt;
     if (src.fusion) {
       if (src.q > 0) this.fusion = Math.min(1, this.fusion + (dt * (0.6 + 0.4 * src.q / config.flowMax)) / config.fusionSec);

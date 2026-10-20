@@ -14,14 +14,15 @@ function heartOutline(stretch = 1) {
   return pts;
 }
 
-// 树叶（rosetta）：比心长的椭圆叶子，往前稍微收窄（参数按模拟倒出来的树叶对过）
+// 树叶（rosetta）：圆圆的扇形底纹，往拉花缸那头收窄。半宽剖面取自对照视频调好的示范倒法（闭合缝隙后量的）
 function leafOutline() {
-  const pts = [];
-  const N = 120, L = 1.45, taper = 0.15;
-  const hw = s => 0.5 * Math.sqrt(Math.max(0, 1 - (2 * s - 1) ** 2)) * (1 - taper * s);
-  for (let i = 0; i <= N; i++) { const s = i / N; pts.push([hw(s), (s - 0.5) * L]); }
-  for (let i = N; i >= 0; i--) { const s = i / N; pts.push([-hw(s), (s - 0.5) * L]); }
-  return pts;
+  const prof = [[-0.53, 0.18], [-0.49, 0.29], [-0.45, 0.36], [-0.41, 0.41], [-0.36, 0.46], [-0.32, 0.48], [-0.28, 0.5],
+    [-0.24, 0.52], [-0.2, 0.53], [-0.16, 0.54], [-0.12, 0.54], [-0.07, 0.54], [-0.03, 0.54], [0.01, 0.54], [0.05, 0.53],
+    [0.09, 0.53], [0.13, 0.52], [0.17, 0.5], [0.22, 0.48], [0.26, 0.46], [0.3, 0.43], [0.34, 0.39], [0.38, 0.36],
+    [0.42, 0.32], [0.46, 0.29], [0.5, 0.27], [0.55, 0.24], [0.59, 0.21]];
+  const right = prof.map(([y, w]) => [w, -y]);
+  const left = prof.slice().reverse().map(([y, w]) => [-w, -y]);
+  return [[0, 0.55], ...right, [0, -0.63], ...left];
 }
 
 // 郁金香：圆顶、两侧笔直往下（外圈月牙的两端）。半宽剖面取自对照视频调好的示范倒法（闭合缝隙后量的）
@@ -37,7 +38,8 @@ function tulipOutline() {
 
 // 示范倒法（生成卡片上的示范图用）。每段：t 秒，y0→y1 位置（杯心为 0，往后为正，单位半径），
 // flow 流量，lift 抬高，wig/hz 左右摆幅和频率
-const pull = from => [{ t: 0.4, y0: from, y1: from, lift: 1 }, { t: 0.45, y0: from, y1: -0.8, lift: 1 }];
+// 收尾：先原地抬高 0.15 秒，再 0.3 秒快速往前拉线（和游戏里陀螺仪收尾一致）
+const pull = from => [{ t: 0.15, y0: from, y1: from, lift: 1 }, { t: 0.3, y0: from, y1: from - 1.2, lift: 1 }];
 const pause = (a, b) => ({ t: 0.3, y0: a, y1: b, flow: 0 });
 
 export const PATTERNS = [
@@ -73,16 +75,19 @@ export const PATTERNS = [
   },
   {
     id: 'rosetta',
-    locked: true, // 和视频对比还差得远（片的月牙包不下去、树叶纹路太少太粗），先不开放
     name: { en: 'Rosetta', zh: '树叶' },
     outline: leafOutline(),
     layers: 6,
+    needPull: true,
+    needBack: 0.4, // 出奶时至少往后退 0.4 个杯口半径（叶脉）
     notch: false,
-    startBack: -0.2,
-    demo: [{ t: 0.9, y0: -0.2, y1: -0.2 }, { t: 3.2, y0: -0.2, y1: 0.55, wig: 0.06, hz: 4 }, ...pull(0.55)],
+    startBack: 0.05,
+    // 对照视频：原地摆动出半圆底纹 → 保持流量、边摆边匀速往后退（叶脉）→ 到杯口压低做一颗小心 → 垂直收尾
+    demo: [{ t: 0.9, y0: 0.05, y1: 0.05 }, { t: 3.6, y0: 0.05, y1: 0.05, wig: 0.14, hz: 4 },
+      { t: 1.6, y0: 0.05, y1: 0.65, wig: 0.14, hz: 4 }, { t: 0.35, y0: 0.65, y1: 0.65 }, ...pull(0.65)],
     hint: {
-      en: 'Wiggle side to side while slowly drawing the pitcher back, then pull a thin line forward through the middle.',
-      zh: '一边左右摇，一边把拉花缸慢慢往后退，最后往前拉一条细线穿过中间。',
+      en: 'Wiggle in place until a half-circle of ripples forms, keep wiggling while drawing the pitcher straight back, drop a small heart at the end, then pull through.',
+      zh: '原地左右摆，摆出半圆底纹；保持流量，边摆边把奶缸匀速往后退；到杯口压低做一颗小心，最后往前拉线收尾。',
     },
   },
   {
