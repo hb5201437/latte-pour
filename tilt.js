@@ -32,9 +32,18 @@ export class TiltInput {
     this.rollCenter += (t.roll - this.rollCenter) * a;
     const lateral = Math.max(-config.lateralMax,
       Math.min(config.lateralMax, -(t.roll - this.rollCenter) * config.rollGain));
-    // 流量比例：过了起倒角从 0 平滑增加，到满倾角封顶
-    const f = Math.min(1, Math.max(0, (tilt - config.tiltStart) / (config.tiltFull - config.tiltStart)));
-    const flow = f * f * (3 - 2 * f);
-    return { tilt, roll: t.roll - this.rollCenter, lateral, flow, accel: takeAccelPeak() };
+    return { tilt, roll: t.roll - this.rollCenter, lateral, angle: t.angle, accel: takeAccelPeak() };
+  }
+
+  // 流量比例：倾过"出奶角"后奶自己流出来，倾得越多流得越多。
+  // 出奶角跟缸里的奶量有关：满缸稍微一倾就出，奶越少要倾得越多（和真的拉花缸一样）
+  static flow(tilt, milk) {
+    const start = config.tiltStart + (1 - milk) * config.tiltStartEmptyAdd;
+    const f = Math.min(1, Math.max(0, (tilt - start) / config.tiltRange));
+    return f * f * (3 - 2 * f);
+  }
+
+  static startAngle(milk) {
+    return config.tiltStart + (1 - milk) * config.tiltStartEmptyAdd;
   }
 }

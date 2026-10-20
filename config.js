@@ -3,7 +3,7 @@
 export const config = {
   // —— 传感器（第1步）——
   // 平滑窗口（毫秒），对传感器读数做指数平滑
-  smoothingMs: 100,
+  smoothingMs: 35,
   // 等多久没收到任何传感器事件就判定为"无陀螺仪"（毫秒）
   sensorTimeoutMs: 1500,
 
@@ -11,7 +11,7 @@ export const config = {
   gridSize: 256,          // 模拟网格边长，越大越细腻越耗性能
   maxDpr: 2,              // 画布像素比上限
   cupRadiusFrac: 0.40,    // 杯口半径占屏幕短边的比例
-  pitcherSize: 0.34,      // 拉花缸缸身半径占杯口半径的比例
+  pitcherSize: 0.72,      // 拉花缸缸身半径占杯口半径的比例（350ml 拉花缸约 7.5cm，杯口约 10cm）
   pitcherMilkSec: 7,      // 满流量倒多少秒把缸里的奶倒完（只影响画面）
 
   // —— 倒奶 ——
@@ -24,10 +24,10 @@ export const config = {
   driftTauMs: 40,         // 往前移动速度的平滑时间，越短穿心时流量降得越快
 
   // —— 陀螺仪（第3步）——
-  tiltStart: 3,           // 前倾超过这个角度（度）开始出奶，流量从 0 平滑增加
-  tiltFull: 25,           // 前倾到这个角度流量最大
-  stopTilt: 1.5,          // 收回到这个角度以下……
-  stopHoldMs: 600,        // ……并保持这么久，算倒完（没穿心）
+  tiltStart: 6,           // 满缸时前倾超过这个角度（度）奶开始自己流出来
+  tiltStartEmptyAdd: 14,  // 奶倒完时出奶角再多这么多度（奶越少要倾得越多）
+  tiltRange: 20,          // 过了出奶角再倾这么多度，流量最大
+  stopHoldMs: 600,        // 收回到不出奶并保持这么久，算倒完（没穿心）
   baseFollowTauMs: 300,   // 没在倒时往后仰，基准姿势跟上去的速度
   rollGain: 1.0,          // 左右倾 1 度，奶柱横移多少格
   rollCenterTauMs: 1500,  // 没在倒时，左右倾的中心跟随手的速度

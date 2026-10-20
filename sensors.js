@@ -64,14 +64,26 @@ export function takeAccelPeak() {
 // 屏幕的俯仰和左右倾（度），按屏幕当前显示方向计算，横屏竖屏都适用。
 //   pitch：屏幕上沿相对水平面抬起的角度，上沿往下压时变小
 //   roll：屏幕右沿相对水平面抬起的角度，右沿往下压时变小
+// 屏幕旋转角度：不完全信手机报的值（iPhone 上可能和预期相反，导致前倾被当成后仰），
+// 而是看重力：屏幕显示的"上方"一定是手机当前朝天的那一侧。重力不明显（手机放平）时才用报的值。
+let inferredAngle = null;
+function screenAngle() {
+  const reported = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+  const landscape = window.innerWidth > window.innerHeight;
+  if (landscape && Math.abs(reading.ux) > 0.35) inferredAngle = reading.ux > 0 ? 90 : -90;
+  else if (!landscape && Math.abs(reading.uy) > 0.35) inferredAngle = reading.uy > 0 ? 0 : 180;
+  else if (inferredAngle != null && (Math.abs(inferredAngle) === 90) !== landscape) inferredAngle = null;
+  return inferredAngle ?? reported;
+}
+
 export function screenTilt() {
-  if (reading.ux == null) return { pitch: 0, roll: 0 };
-  const angle = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+  if (reading.ux == null) return { pitch: 0, roll: 0, angle: 0 };
+  const angle = screenAngle();
   const th = angle * RAD;
   const sx = reading.ux * Math.cos(th) - reading.uy * Math.sin(th);
   const sy = reading.ux * Math.sin(th) + reading.uy * Math.cos(th);
   const clamp = v => Math.max(-1, Math.min(1, v));
-  return { pitch: Math.asin(clamp(sy)) / RAD, roll: Math.asin(clamp(sx)) / RAD };
+  return { pitch: Math.asin(clamp(sy)) / RAD, roll: Math.asin(clamp(sx)) / RAD, angle };
 }
 
 // 必须在用户手势（点击）回调里同步调用，iOS 才会弹权限框。

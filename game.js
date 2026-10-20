@@ -60,7 +60,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
     // 杯子上方留杯沿，下方留出拉花缸（缸身 + 把手）的位置
-    const above = 1.14, below = 1.75;
+    const above = 1.14, below = 2.0;
     R = Math.min(W * config.cupRadiusFrac, (H - 24) / (above + below));
     cx = W / 2;
     cy = (H - (above + below) * R) / 2 + above * R;
@@ -150,6 +150,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     if (state !== 'pouring') {
       tiltIn.follow(dt);
       const s = tiltIn.read(dt);
+      s.flow = TiltInput.flow(s.tilt, pit.milk);
       hud = s;
       p.x = entry.x; p.y = entry.y;
       if (state === 'ready' && s.flow > 0) {
@@ -165,6 +166,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
 
     elapsed += dt;
     const s = tiltIn.read(dt);
+    s.flow = TiltInput.flow(s.tilt, pit.milk);
     hud = s;
     accelShow = Math.max(accelShow * Math.exp(-dt / 0.6), s.accel);
     let flowScale;
@@ -194,7 +196,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
 
     if (elapsed * 1000 > config.pushIgnoreMs && s.accel > config.pushAccel) { pulling = true; pullT = 0; }
 
-    lowFor = s.tilt < config.stopTilt ? lowFor + dt : 0;
+    lowFor = s.flow === 0 ? lowFor + dt : 0;
     if (lowFor * 1000 > config.stopHoldMs) finish();
   }
 
@@ -255,16 +257,21 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
       alpha: 1 - away,
     });
 
+    // 当前操作模式，常驻在左下角
+    ctx.font = '12px -apple-system, sans-serif';
+    ctx.fillStyle = 'rgba(246,239,230,0.45)';
+    ctx.fillText(mode === 'tilt' ? '陀螺仪模式' : '手指模式', 12, H - 14);
+
     // ?debug=1 时显示陀螺仪读数，调手感用
     if (debug && hud) {
       ctx.font = '12px ui-monospace, Menlo, monospace';
       ctx.fillStyle = 'rgba(255,255,255,0.75)';
       const lines = [
-        `前倾 ${hud.tilt.toFixed(1)}°  (起倒 ${config.tiltStart}° / 满 ${config.tiltFull}°)`,
+        `前倾 ${hud.tilt.toFixed(1)}°  (出奶角 ${TiltInput.startAngle(pit.milk).toFixed(0)}°)`,
         `左右 ${hud.roll.toFixed(1)}°  横移 ${hud.lateral.toFixed(1)} 格`,
         `流量 ${(pour.q / config.flowMax * 100).toFixed(0)}%  加速度峰值 ${accelShow.toFixed(1)} (推 >${config.pushAccel})`,
         `状态 ${state}${pulling ? ' · 收尾' : ''}  帧率 ${fps.toFixed(0)}  每帧耗时 ${frameMs.toFixed(1)}ms`,
-        `屏幕角度 screen=${screen.orientation ? screen.orientation.angle : '无'} window=${window.orientation ?? '无'}`,
+        `屏幕角度 用=${hud.angle} 报=${screen.orientation ? screen.orientation.angle : '无'}/${window.orientation ?? '无'}`,
       ];
       lines.forEach((t, i) => ctx.fillText(t, 12, 24 + i * 16));
     }
