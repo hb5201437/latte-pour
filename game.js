@@ -294,6 +294,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
   requestAnimationFrame(frame);
 
   return {
+    isTilt: mode === 'tilt',
     reset() {
       sim.reset();
       elapsed = 0;

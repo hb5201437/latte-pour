@@ -86,3 +86,15 @@ footer {
 .overlay-bottom button { pointer-events: auto; }
 .overlay-top[hidden], .overlay-bottom[hidden] { display: none; }
 body:has(#play:not([hidden])) footer { display: none; }
+
+.flip {
+  position: fixed;
+  right: 12px;
+  bottom: max(12px, env(safe-area-inset-bottom));
+  font-size: 0.8rem;
+  padding: 8px 14px;
+  background: rgba(246, 239, 230, 0.15);
+  color: var(--foam);
+  border: 1px solid rgba(246, 239, 230, 0.35);
+}
+.flip[hidden] { display: none; }

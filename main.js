@@ -1,8 +1,9 @@
 import { reading, requestSensors } from './sensors.js';
 import { createGame } from './game.js';
+import { setTiltFlip } from './tilt.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1020-r13';
+const BUILD = '1020-r14';
 
 const $ = id => document.getElementById(id);
 $('build').textContent = '版本 ' + BUILD;
@@ -28,6 +29,20 @@ const FALLBACK_NOTE = {
 
 let game = null;
 
+// 倒奶方向手动翻转，记在本机
+const FLIP_KEY = 'latte-pour.flipTilt';
+let flipped = false;
+try { flipped = localStorage.getItem(FLIP_KEY) === '1'; } catch { /* 隐私模式读不到就用默认 */ }
+setTiltFlip(flipped);
+const flipLabel = () => { $('flipBtn').textContent = flipped ? '方向已反转 · 点这里改回' : '倒奶方向反了？点这里'; };
+flipLabel();
+$('flipBtn').addEventListener('click', () => {
+  flipped = !flipped;
+  setTiltFlip(flipped);
+  try { localStorage.setItem(FLIP_KEY, flipped ? '1' : '0'); } catch { /* 忽略 */ }
+  flipLabel();
+});
+
 $('startBtn').addEventListener('click', async () => {
   if (debugSensors) return startSensorReadout();
   if (game) return;
@@ -45,15 +60,17 @@ $('startBtn').addEventListener('click', async () => {
   game = createGame($('cup'), {
     mode,
     debug: debugHud,
-    onStart: () => { $('hint').hidden = true; },
+    onStart: () => { $('hint').hidden = true; $('flipBtn').hidden = true; },
     onEnd: () => { $('result').hidden = false; },
   });
+  $('flipBtn').hidden = mode !== 'tilt';
 });
 
 $('againBtn').addEventListener('click', () => {
   game.reset();
   $('result').hidden = true;
   $('hint').hidden = false;
+  $('flipBtn').hidden = !game.isTilt;
 });
 
 // —— 第1步：传感器读数页 ——

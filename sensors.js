@@ -68,10 +68,12 @@ export function takeAccelPeak() {
 // 而是看重力：屏幕显示的"上方"一定是手机当前朝天的那一侧。重力不明显（手机放平）时才用报的值。
 let inferredAngle = null;
 function screenAngle() {
-  const reported = (screen.orientation && screen.orientation.angle) ?? window.orientation ?? 0;
+  // iPhone 上 window.orientation 一直可靠，screen.orientation.angle 的方向可能和它相反，所以优先用前者
+  const reported = typeof window.orientation === 'number' ? window.orientation
+    : (screen.orientation && screen.orientation.angle) || 0;
   const landscape = window.innerWidth > window.innerHeight;
-  if (landscape && Math.abs(reading.ux) > 0.35) inferredAngle = reading.ux > 0 ? 90 : -90;
-  else if (!landscape && Math.abs(reading.uy) > 0.35) inferredAngle = reading.uy > 0 ? 0 : 180;
+  if (landscape && Math.abs(reading.ux) > 0.15) inferredAngle = reading.ux > 0 ? 90 : -90;
+  else if (!landscape && Math.abs(reading.uy) > 0.15) inferredAngle = reading.uy > 0 ? 0 : 180;
   else if (inferredAngle != null && (Math.abs(inferredAngle) === 90) !== landscape) inferredAngle = null;
   return inferredAngle ?? reported;
 }

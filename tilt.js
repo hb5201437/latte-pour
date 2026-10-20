@@ -3,6 +3,16 @@ import { screenTilt, takeAccelPeak } from './sensors.js';
 
 // 陀螺仪输入：把手机姿态翻译成"倒多少、往哪边晃、有没有往前推"。
 // 角度都相对于"平时拿手机的姿势"计算，所以怎么端着都能玩。
+
+// 手动翻转：个别手机方向判反时，玩家可以在页面上切换（前后、左右一起翻，相当于转 180°）
+let flip = 1;
+export function setTiltFlip(on) { flip = on ? -1 : 1; }
+
+function pose() {
+  const t = screenTilt();
+  return { pitch: t.pitch * flip, roll: t.roll * flip, angle: t.angle };
+}
+
 export class TiltInput {
   constructor() {
     this.basePitch = null;
@@ -12,7 +22,7 @@ export class TiltInput {
   // 没在倒奶时调用。基准姿势只在往后仰时跟上去（往前倾一点都不吸收，
   // 否则慢慢倾的时候基准跟着走，永远倾不到出奶的角度）
   follow(dt) {
-    const t = screenTilt();
+    const t = pose();
     if (this.basePitch == null) { this.basePitch = t.pitch; this.rollCenter = t.roll; return; }
     if (t.pitch > this.basePitch) {
       const a = 1 - Math.exp((-dt * 1000) / config.baseFollowTauMs);
@@ -23,7 +33,7 @@ export class TiltInput {
   }
 
   read(dt) {
-    const t = screenTilt();
+    const t = pose();
     if (this.basePitch == null) this.follow(dt);
     // 前倾角：屏幕上沿往下压了多少度
     const tilt = this.basePitch - t.pitch;
