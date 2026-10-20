@@ -5,9 +5,10 @@ import { makeSnapshot } from './snapshot.js';
 import { count } from './analytics.js';
 import { t, applyStatic, lang } from './i18n.js';
 import { verdict } from './verdicts.js';
+import { initAudio, isMuted, setMuted, resultSound } from './audio.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1020-r23';
+const BUILD = '1020-r24';
 
 const $ = id => document.getElementById(id);
 applyStatic();
@@ -52,6 +53,7 @@ $('flipBtn').addEventListener('click', () => {
 $('startBtn').addEventListener('click', async () => {
   if (debugSensors) return startSensorReadout();
   if (game) return;
+  initAudio(); // iOS 要求在点击里启动声音
 
   $('startBtn').disabled = true;
   $('startNote').textContent = t('connecting');
@@ -80,6 +82,7 @@ $('startBtn').addEventListener('click', async () => {
       $('bestLine').textContent = newBest ? t('newBest') : t('best') + ' ' + best;
       $('bestLine').classList.toggle('new', newBest);
       $('result').hidden = false;
+      if (!r.overflow) resultSound(r.score, newBest);
       if (r.overflow) count('overflow', 'Overflowed the cup', true);
       if (newBest) count('new-best', 'New personal best', true);
       count('pour-done', 'Finished a pour', true);
@@ -107,7 +110,16 @@ $('saveBtn').addEventListener('click', () => {
 
 $('saveClose').addEventListener('click', () => { $('savePanel').hidden = true; });
 
+// 静音按钮
+const muteLabel = () => {
+  $('muteBtn').setAttribute('aria-label', isMuted() ? 'Unmute' : 'Mute');
+  $('muteBtn').classList.toggle('off', isMuted());
+};
+muteLabel();
+$('muteBtn').addEventListener('click', () => { initAudio(); setMuted(!isMuted()); muteLabel(); });
+
 $('againBtn').addEventListener('click', () => {
+  initAudio();
   $('savePanel').hidden = true;
   game.reset();
   $('result').hidden = true;

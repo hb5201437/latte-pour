@@ -5,6 +5,7 @@ import { TiltInput } from './tilt.js';
 import { lockScreenAngle, unlockScreenAngle } from './sensors.js';
 import { drawPitcher } from './pitcher.js';
 import { drawTable, drawCup, drawLiquidGloss, drawSpill } from './scene.js';
+import { updatePour, splash } from './audio.js';
 import { scorePour } from './score.js';
 import { t } from './i18n.js';
 
@@ -137,6 +138,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
       const angle = Math.hypot(dx, dy) > n * 0.08 ? Math.atan2(dy, dx) : Math.atan2(-fwd.y, -fwd.x);
       spill = { angle, t: 0, seed: 1 + Math.floor(Math.random() * 1000) };
       shake = R * 0.05;
+      splash();
       finish();
     }
   }
@@ -165,6 +167,7 @@ export function createGame(canvas, { mode, onStart, onEnd, debug = false }) {
     }
     if (state === 'pouring' && elapsed >= config.pourTimeLimit) finish();
     updatePitcher(dt);
+    updatePour(state === 'pouring' ? pour.q / config.flowMax : 0, pit.height);
     if (spill && spill.t < 1) spill.t = Math.min(1, spill.t + dt / 0.9);
     shake *= Math.exp(-dt / 0.12);
     if (shake < 0.3) shake = 0;

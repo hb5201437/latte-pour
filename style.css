@@ -172,3 +172,22 @@ button:active { transform: scale(0.97); }
 .tier { font-family: "New York", ui-serif, Georgia, "Songti SC", serif; font-size: 1.1rem; line-height: 1.35; margin: 4px 0 2px; }
 .best.new { color: var(--gold); }
 .save-panel img { box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5); }
+.mute {
+  position: fixed;
+  top: max(12px, env(safe-area-inset-top));
+  right: 12px;
+  width: 40px; height: 40px;
+  padding: 0;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  background: rgba(28, 17, 11, 0.45);
+  color: var(--foam);
+  border: 1px solid rgba(246, 239, 230, 0.18);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+  z-index: 2;
+}
+.mute .cross { display: none; }
+.mute.off .cross { display: inline; }
+.mute.off .wave { display: none; }
+#hint { padding-right: 44px; }

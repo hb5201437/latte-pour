@@ -38,6 +38,9 @@ export class FoamSim {
       const r = Math.hypot((i % n) - c, ((i / n) | 0) - c) / R;
       this.vig[i] = 1 - 0.22 * smoothstep(0.8, 1, r);
     }
+    // 微泡纹理：很细的随机明暗，让奶泡不像一块平涂的奶油
+    const raw = new Float32Array(n * n).map(() => Math.random() - 0.5);
+    this.grain = boxBlur(raw, n, 1).map(v => v * 3);
   }
 
   reset() {
@@ -243,7 +246,7 @@ export class FoamSim {
 
   // 写入 RGBA 像素（长度 n*n*4）
   render(out) {
-    const { n, d, p, bg, vig } = this;
+    const { n, d, p, bg, vig, grain } = this;
     const { edgeLo, edgeHi, haloLo, haloStrength, foamFloor, lineFrac, lineStrength } = config;
     // 融合让油脂变浅，入点附近最明显
     const fu0 = this.fusion * config.fusionLighten;
@@ -270,6 +273,14 @@ export class FoamSim {
       // 旧奶泡偏奶油色，新奶泡偏白
       const t = Math.min(1, Math.max(0, (v - foamFloor) / (1 - foamFloor)));
       let fr = 238 + 12 * t, fg = 226 + 20 * t, fb = 206 + 32 * t;
+      // 光照：奶泡是微微鼓起来的，迎光（左上）的一侧亮、背光的一侧暗；再叠一层微泡纹理
+      let lit = 1;
+      if (a > 0.01 && i > n && i < n * n - n) {
+        const sgx = d[i + 1] - d[i - 1], sgy = d[i + n] - d[i - n];
+        const shade = (sgx * 0.6 + sgy * 0.8) * config.foamRelief; // 光从左上来
+        lit = 1 + Math.max(-0.14, Math.min(0.12, shade)) + grain[i] * config.foamGrain;
+      }
+      fr *= lit; fg *= lit; fb *= lit;
       // 千层纹：相位跨过整数处画一道色带，宽度占每层间距的 lineFrac，层被挤密的地方色带也跟着变细（和真的一样）
       let la = 0;
       if (v > foamFloor - 0.02) {

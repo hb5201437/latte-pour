@@ -108,4 +108,6 @@ export const config = {
   edgeSharpen: 4,         // 边缘锐化速度，0 = 不锐化（边缘会越来越糊）
   haloLo: 0.04,           // 奶泡外缘一圈浅金棕色晕边（奶泡变薄透出油脂）
   haloStrength: 0.55,
+  foamRelief: 0.35,       // 奶泡立体感（迎光亮、背光暗）的强度
+  foamGrain: 0.03,        // 微泡纹理的明暗幅度
 };

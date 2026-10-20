@@ -30,6 +30,13 @@
 
   <main id="play" class="screen" hidden>
     <canvas id="cup"></canvas>
+    <button id="muteBtn" class="mute" type="button" aria-label="Mute">
+      <svg viewBox="0 0 24 24" width="20" height="20" aria-hidden="true">
+        <path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>
+        <path class="wave" d="M16 8.5a4.5 4.5 0 0 1 0 7M18.5 6a8 8 0 0 1 0 12" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+        <path class="cross" d="M16 9l5 6M21 9l-5 6" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+      </svg>
+    </button>
     <p id="hint" class="overlay-top note"></p>
     <button id="flipBtn" class="flip" type="button" hidden></button>
     <div id="result" class="result" hidden>
@@ -71,7 +78,7 @@
     // 每次打开都给所有脚本加时间戳（用 import map 改写模块路径），保证拿到最新版。
     (function () {
       var v = Date.now();
-      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher', 'score', 'snapshot', 'analytics', 'i18n', 'verdicts', 'scene'];
+      var files = ['main', 'config', 'sensors', 'sim', 'pour', 'game', 'tilt', 'pitcher', 'score', 'snapshot', 'analytics', 'i18n', 'verdicts', 'scene', 'audio'];
       var imports = {};
       files.forEach(function (f) { imports[new URL(f + '.js', location.href).href] = './' + f + '.js?v=' + v; });
       var map = document.createElement('script');
