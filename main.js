@@ -5,7 +5,7 @@ import { makeSnapshot } from './snapshot.js';
 import { count } from './analytics.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1020-r16';
+const BUILD = '1020-r17';
 
 const $ = id => document.getElementById(id);
 $('build').textContent = '版本 ' + BUILD;
@@ -31,6 +31,7 @@ const FALLBACK_NOTE = {
 
 let game = null;
 let lastResult = null;
+let poursThisVisit = 0; // 这次打开页面倒了几杯，用来看有没有人反复玩
 
 count('/', 'Latte Pour');
 
@@ -72,6 +73,11 @@ $('startBtn').addEventListener('click', async () => {
       $('scoreTier').textContent = r.tier;
       $('result').hidden = false;
       count('pour-done', '倒完一杯', true);
+      // GoatCounter 按访客去重，同一路径一次访问只算一次；所以用"第几杯"分开记，
+      // pour-3 的人数 = 这次打开至少倒了 3 杯的人数
+      poursThisVisit++;
+      const nth = poursThisVisit >= 5 ? '5+' : String(poursThisVisit);
+      count('pour-' + nth, `本次第 ${nth} 杯`, true);
       count('score-' + r.tier, '评价：' + r.tier, true);
     },
   });
