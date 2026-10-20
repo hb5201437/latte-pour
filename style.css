@@ -62,3 +62,27 @@ footer {
   color: var(--muted);
   opacity: 0.6;
 }
+
+#play { padding: 0; }
+
+#cup {
+  position: fixed;
+  inset: 0;
+  touch-action: none;
+  -webkit-touch-callout: none;
+}
+
+.overlay-top, .overlay-bottom {
+  position: fixed;
+  left: 16px;
+  right: 16px;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.overlay-top { top: max(16px, env(safe-area-inset-top)); }
+.overlay-bottom { bottom: max(40px, env(safe-area-inset-bottom)); }
+.overlay-bottom button { pointer-events: auto; }
+.overlay-top[hidden], .overlay-bottom[hidden] { display: none; }
+body:has(#play:not([hidden])) footer { display: none; }
