@@ -10,7 +10,7 @@ import { PATTERNS, patternById } from './patterns.js';
 import { renderDemo } from './demos.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1021-r30';
+const BUILD = '1021-r31';
 
 const $ = id => document.getElementById(id);
 applyStatic();
@@ -151,6 +151,7 @@ $('startBtn').addEventListener('click', async () => {
       count(`score-${pattern.id}-${v.key}`, `${pattern.id} verdict: ${v.key}`, true);
     },
   });
+  if (debugHud) window.__game = game;
   count('mode-' + mode, mode === 'tilt' ? 'Motion controls' : 'Finger controls', true);
   count('lang-' + lang, 'Language: ' + lang, true);
   $('flipBtn').hidden = mode !== 'tilt';

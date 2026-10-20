@@ -32,6 +32,7 @@ export const config = {
   tiltStartEmptyAdd: 14,  // 奶倒完时出奶角再多这么多度（奶越少要倾得越多）
   tiltRange: 14,          // 过了出奶角再倾这么多度，流量最大
   flowCurve: 1.3,         // 倾角→流量的曲线，1 = 正比，越大轻倾时流量越小
+  touchResumeMs: 600,     // 手指模式：松开手指这么久之内再按下，算停一下接着倒（不结束）
   stopHoldMs: 1000,       // 收回到不出奶并保持这么久，算倒完（没穿心）
   baseFollowTauMs: 300,   // 没在倒时往后仰，基准姿势跟上去的速度
   rollGain: 2.2,          // 左右倾 1 度，奶柱横移多少格（手腕转 10° 缸嘴约移 1cm ≈ 杯径 11%）
@@ -61,7 +62,7 @@ export const config = {
   levelAt: 0.8,           // 倒到杯子容量的这个比例时杯子完全放平
   wallSpread: 2.2,        // 被挡住后沿杯壁往两侧流的比例
   pieceGap: 1.8,          // 推推乐片与片之间咖啡色缝的半宽（格）
-  pushPause: 0.15,        // 停流超过这么久（秒）再出奶，算新的一层（郁金香"推一层、停、再推一层"）
+  pushPause: 0.08,        // 停流超过这么久（秒）再出奶，算新的一层（郁金香"推一层、停、再推一层"）
   crossingsPerLine: 2,    // 晃过中线几次出一条线；2 = 左右来回一次一条
   lineFrac: 0.28,         // 千层纹咖啡色带占每层间距的比例
   lineFadeLo: 0.5,        // 层间距挤到每格跨过这么多层时开始渐隐（落点处线最密）
@@ -82,6 +83,7 @@ export const config = {
   scoreNotchWidth: 0.12,  // 检查凹口的区域宽度（占心宽一半的比例）
   scoreNotchFree: 0.45,   // 凹口区域被填到这个比例以内不扣分
   scoreMinCoverage: 0.08, // 奶泡占杯面不到这个比例要按比例扣分
+  scorePieceMinCells: 120, // 一片至少要有这么多格（256×256 网格）才算"看得见"
   scoreOk: 40,            // 达到这个分数算"有点像了"档（统计用，显示的台词在 verdicts.js）
   scoreGood: 70,          // 达到这个分数算"漂亮"档
 
@@ -92,7 +94,8 @@ export const config = {
   // —— 奶泡 ——
   forwardAngle: -Math.PI / 2, // "前方"方向（屏幕坐标，-π/2 = 朝上）。拉花缸在屏幕下方（靠近自己），图案往上长，心尖朝上
   forwardBias: 0.1,       // 落点前方的额外推力，越大奶泡越往前长、越窄
-  backPull: 0,         // 落点后方的回收力，>1 时后方奶泡往回收，落点贴着奶泡后缘（穿心才拉得出凹口）
+  backPull: 0.75,         // 落点后方的回收力，>1 时后方奶泡往回收，落点贴着奶泡后缘（穿心才拉得出凹口）
+  backPullPiece: 0,       // 停一下再推的后面几片的回收力（0 = 往四面长，把前一片撑成月牙）
   surfaceAhead: 4,        // 白色浮出的位置在落点前方多少格（起始）
   surfaceAheadFrac: 0.8,  // 奶泡长大后，浮出点再往前移"奶泡半径 × 这个比例"
   surfaceAheadFlowExp: 0, // 浮出距离随流量变化的程度，0 = 和流量无关
@@ -106,10 +109,10 @@ export const config = {
   liftSinkRadius: 9,      // 吸口影响范围（格）
   liftAbsorb: 0,         // 紧贴吸口的奶泡沉下去的速度（每秒）
   liftAbsorbRadius: 3,    // 沉下去的范围（格）
-  liftWake: 300,          // 尾流往回带的速度（格/秒）
-  liftWakeWidth: 6,       // 尾流宽度（格）
-  liftWakeGap: 25,        // 奶柱身后多远才开始倒流（格）
-  liftWakeLength: 70,     // 尾流在奶柱身后延续多远（格）
+  liftWake: 400,          // 尾流往回带的速度（格/秒）
+  liftWakeWidth: 14,       // 尾流宽度（格）
+  liftWakeGap: 14,        // 奶柱身后多远才开始倒流（格）
+  liftWakeLength: 25,     // 尾流在奶柱身后延续多远（格）
   liftDragBehind: 0.15,   // 奶柱身后还被往前拖的范围（越小 = 一过奶柱就不拖了）
   liftDragCut: 0,       // 抬高后奶柱往前拖奶泡的力减掉多少（1 = 完全不拖）
   liftDragTail: 0.1,     // 抬高收尾时外圈被整体带动的强度（相对奶柱速度）

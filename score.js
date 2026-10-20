@@ -43,6 +43,39 @@ function countLayers(sim, cxCell, cyCell) {
   return layers;
 }
 
+// 形态学闭运算：先膨胀再腐蚀 r 格，把片与片之间的咖啡色细缝填上，只看整体轮廓（郁金香用）
+function closeMask(m, r) {
+  const grow = (src, val) => {
+    const out = new Uint8Array(G * G);
+    for (let y = 0; y < G; y++) for (let x = 0; x < G; x++) {
+      let hit = !val;
+      for (let dy = -r; dy <= r && hit !== val; dy++) for (let dx = -r; dx <= r; dx++) {
+        if (dx * dx + dy * dy > r * r) continue;
+        const xx = x + dx, yy = y + dy;
+        const v = xx >= 0 && yy >= 0 && xx < G && yy < G ? src[yy * G + xx] : 0;
+        if (!!v === val) { hit = val; break; }
+      }
+      out[y * G + x] = hit ? 1 : 0;
+    }
+    return out;
+  };
+  return grow(grow(m, true), false);
+}
+
+// 片数：停一下再推的每一片都有自己的片号，数一数还看得见的有几片（郁金香用）
+function countPieces(sim) {
+  const hist = new Map();
+  for (let i = 0; i < sim.d.length; i++) {
+    const v = sim.d[i];
+    if (v < 0.55) continue;
+    const k = Math.round(sim.k[i] / v);
+    hist.set(k, (hist.get(k) || 0) + 1);
+  }
+  let pieces = 0;
+  for (const c of hist.values()) if (c >= config.scorePieceMinCells) pieces++;
+  return pieces;
+}
+
 function inside(poly, x, y) {
   let hit = false;
   for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
@@ -56,14 +89,16 @@ function inside(poly, x, y) {
 export function scorePour(sim, pattern) {
   const TEMPLATE = template(pattern);
   const n = sim.n, step = n / G;
-  const mask = new Uint8Array(G * G);
-  let area = 0, sx = 0, sy = 0;
+  let mask = new Uint8Array(G * G);
   for (let y = 0; y < G; y++) {
     for (let x = 0; x < G; x++) {
       const v = sim.d[Math.floor((y + 0.5) * step) * n + Math.floor((x + 0.5) * step)];
-      if (v > 0.45) { mask[y * G + x] = 1; area++; sx += x; sy += y; }
+      if (v > 0.45) mask[y * G + x] = 1;
     }
   }
+  if (pattern.closeGaps) mask = closeMask(mask, pattern.closeGaps);
+  let area = 0, sx = 0, sy = 0;
+  for (let i = 0; i < G * G; i++) if (mask[i]) { area++; sx += i % G; sy += (i / G) | 0; }
   // 杯面积（以评分网格计）里奶泡占的比例；太少说明基本没倒出图案
   const cupArea = Math.PI * (G / 2) ** 2;
   const coverage = area / cupArea;
@@ -71,7 +106,7 @@ export function scorePour(sim, pattern) {
 
   const cx = sx / area, cy = sy / area;
   const scale = Math.sqrt(area); // 模板面积为 1，缩放后与奶泡同面积
-  const layers = countLayers(sim, (cx + 0.5) * step, (cy + 0.5) * step);
+  const layers = pattern.pieces ? countPieces(sim) : countLayers(sim, (cx + 0.5) * step, (cy + 0.5) * step);
   // 模板外接框，框外的格直接跳过多边形判断
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const [x, y] of TEMPLATE) {
@@ -121,7 +156,10 @@ export function scorePour(sim, pattern) {
   const notchFill = notchCells ? notchFilled / notchCells : 0;
   if (pattern.notch) score *= 1 - config.scoreNotchPenalty * Math.max(0, (notchFill - config.scoreNotchFree) / (1 - config.scoreNotchFree));
   // 分层不够要扣分：郁金香要叠够层数，树叶要摇出够多的纹路
-  if (pattern.layers) score *= 0.35 + 0.65 * Math.min(1, layers / pattern.layers);
+  const need = pattern.pieces || pattern.layers;
+  if (need) score *= 0.35 + 0.65 * Math.min(1, layers / need);
+  // 要求收尾的图案（郁金香）：没有抬高往前拉线，分数减半
+  if (pattern.needPull && !sim.pulled) score *= 0.5;
   // 图案太小（没倒出多少奶泡）要扣分
   if (coverage < config.scoreMinCoverage) score *= coverage / config.scoreMinCoverage;
   score = Math.round(Math.max(0, Math.min(100, score)));

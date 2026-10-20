@@ -119,7 +119,14 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   canvas.addEventListener('pointerdown', e => {
     if (state === 'done' || pulling || drag) return;
     try { canvas.setPointerCapture(e.pointerId); } catch { /* 个别浏览器不支持时照样能拖 */ }
+    const k = n / (2 * R);
+    // 手指模式停顿中重新按下：拉花缸落到"手指位置 + 原来的手指到缸嘴偏移"，
+    // 这样松开、手指往后挪一点再按下，拉花缸就往后退了（郁金香推下一片）
+    if (mode === 'touch' && state === 'pouring' && touchPausedFor >= 0 && touchOffset) {
+      [entry.x, entry.y] = clampToCup(e.clientX * k + touchOffset.x, e.clientY * k / sqL + touchOffset.y);
+    }
     drag = { id: e.pointerId, x: e.clientX, y: e.clientY, ex: entry.x, ey: entry.y };
+    if (mode === 'touch') touchOffset = { x: entry.x - e.clientX * k, y: entry.y - e.clientY * k / sqL };
     if (mode === 'touch' && state === 'ready') {
       p.x = entry.x; p.y = entry.y;
       pour.start(p.x, p.y);
@@ -127,6 +134,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
       state = 'pouring';
       onStart();
     }
+    touchPausedFor = -1; // 手指模式：松开后很快又按下 = 停一下接着倒（郁金香推下一片）
   });
   canvas.addEventListener('pointermove', e => {
     if (!drag || e.pointerId !== drag.id || state === 'done' || pulling) return;
@@ -136,8 +144,11 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   const release = e => {
     if (!drag || e.pointerId !== drag.id) return;
     drag = null;
-    if (mode === 'touch' && state === 'pouring') finish();
+    if (mode === 'touch' && state === 'pouring') touchPausedFor = 0;
   };
+  // 手指模式松开手指后已经停了多久（秒），-1 = 手指按着
+  let touchPausedFor = -1;
+  let touchOffset = null; // 手指位置到缸嘴落点的偏移（格）
   canvas.addEventListener('pointerup', release);
   canvas.addEventListener('pointercancel', release);
 
@@ -207,7 +218,13 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
       elapsed += dt;
       p.x = entry.x; p.y = entry.y;
       clampP();
-      sim.step(dt, pour.update(dt, p.x, p.y));
+      const paused = touchPausedFor >= 0;
+      if (paused) {
+        touchPausedFor += dt;
+        // 松开太久才算倒完；快速一划（抬高收尾）后松手，马上结束
+        if (touchPausedFor * 1000 > config.touchResumeMs || (pour.lift || 0) > 0.5) { touchPausedFor = -1; finish(); return; }
+      }
+      sim.step(dt, pour.update(dt, p.x, p.y, paused ? 0 : 1));
       trackVolume(dt);
     } else {
       p.x = entry.x; p.y = entry.y;
@@ -407,6 +424,8 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
 
   return {
     isTilt: mode === 'tilt',
+    // 调试用：当前倒奶状态
+    debugState: () => ({ state, x: +p.x.toFixed(1), y: +p.y.toFixed(1), q: Math.round(pour.q), lift: +(pour.lift || 0).toFixed(2), piece: pour.piece, poured: +poured.toFixed(2), paused: touchPausedFor }),
     setPattern(p) { pattern = p; },
     foamCanvas: off, // 最后一帧渲染好的奶泡，保存图片用
     reset() {
@@ -418,6 +437,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
       Object.assign(pit, { height: 0.6, milk: 1, away: 0, rock: 0 });
       Object.assign(slosh, { x: 0, y: 0, vx: 0, vy: 0, lastX: null, lastY: null, lastVx: 0, lastVy: 0, lastFlow: 0 });
       poured = 0;
+      touchPausedFor = -1;
       unlockScreenAngle();
       overflowed = false;
       spill = null;

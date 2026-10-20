@@ -24,6 +24,17 @@ function leafOutline() {
   return pts;
 }
 
+// 郁金香：圆顶、两侧笔直往下（外圈月牙的两端）。半宽剖面取自对照视频调好的示范倒法（闭合缝隙后量的）
+function tulipOutline() {
+  const prof = [[-0.54, 0.2], [-0.48, 0.34], [-0.41, 0.4], [-0.34, 0.43], [-0.27, 0.47], [-0.2, 0.49], [-0.14, 0.5],
+    [-0.07, 0.52], [0, 0.52], [0.07, 0.52], [0.14, 0.52], [0.2, 0.52], [0.27, 0.5], [0.34, 0.49], [0.41, 0.47],
+    [0.48, 0.43], [0.54, 0.4], [0.61, 0.37], [0.68, 0.3]];
+  // 剖面里 y 朝屏幕下方（往拉花缸那边），局部坐标里 +y 是前方，所以取反
+  const right = prof.map(([y, w]) => [w, -y]);
+  const left = prof.slice().reverse().map(([y, w]) => [-w, -y]);
+  return [[0, 0.56], ...right, [0, -0.7], ...left];
+}
+
 // 示范倒法（生成卡片上的示范图用）。每段：t 秒，y0→y1 位置（杯心为 0，往后为正，单位半径），
 // flow 流量，lift 抬高，wig/hz 左右摆幅和频率
 const pull = from => [{ t: 0.4, y0: from, y1: from, lift: 1 }, { t: 0.45, y0: from, y1: -0.8, lift: 1 }];
@@ -45,17 +56,19 @@ export const PATTERNS = [
   },
   {
     id: 'tulip',
-    locked: true, // 和视频对比还差得远（片的月牙包不下去、树叶纹路太少太粗），先不开放
     name: { en: 'Tulip', zh: '郁金香' },
-    outline: heartOutline(1.2),
-    layers: 3,
-    notch: true,
-    startBack: 0.15,
-    demo: [{ t: 0.9, y0: 0.15, y1: 0.15 }, { t: 1.1, y0: 0.15, y1: 0.15 }, pause(0.15, 0.33), { t: 0.8, y0: 0.33, y1: 0.33 },
-      pause(0.33, 0.5), { t: 0.6, y0: 0.5, y1: 0.5 }, ...pull(0.5)],
+    outline: tulipOutline(),
+    pieces: 4, // 至少推出 4 片（外圈 + 3 片）
+    needPull: true,
+    closeGaps: 3, // 评分时把片与片之间的缝填上，只比整体轮廓
+    notch: false,
+    startBack: 0.3,
+    // 对照视频：第一团推大、推到对面杯壁；之后每团倒进前一团里面，把它撑成月牙，一团比一团小
+    demo: [{ t: 0.9, y0: 0.3, y1: 0.3 }, { t: 2.6, y0: 0.3, y1: -0.05 }, pause(-0.05, 0.13), { t: 1.0, y0: 0.13, y1: 0.05 },
+      pause(0.05, 0.23), { t: 0.55, y0: 0.23, y1: 0.19 }, pause(0.19, 0.37), { t: 0.3, y0: 0.37, y1: 0.35 }, ...pull(0.35)],
     hint: {
-      en: 'Push a blob, pause, move back a little, push the next one into it. Three layers, then pull through.',
-      zh: '推一团、停一下、往后退一点，再推下一团顶进去。叠三层，最后往前推收尾。',
+      en: 'Push a big blob, pause, then push a smaller one into the middle of it so it wraps around. Repeat 3–4 times, each smaller, then pull through.',
+      zh: '先推一大团，停一下，再把小一点的一团推进它中间，把它撑成月牙。重复 3–4 次、一次比一次小，最后往前推收尾。',
     },
   },
   {

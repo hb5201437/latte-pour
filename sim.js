@@ -52,6 +52,7 @@ export class FoamSim {
     this.p.fill(0);
     this.k.fill(0);
     this.vol = 0;
+    this.pulled = false;
     this.fusion = 0;
     this.vol = 0;    // 倒进杯子的总量（满流量倒 1 秒 = 1），决定杯子放平到什么程度
     this.area = 0;   // 这一片倒入的奶泡面积（格²）
@@ -109,6 +110,8 @@ export class FoamSim {
 
   step(dt, src) {
     const prevR = this.surface().r;
+    // 记下有没有抬高往前拉过线（郁金香要求收尾）
+    if ((src.lift ?? 0) > 0.8 && Math.hypot(src.vx, src.vy) > 60) this.pulled = true;
     if (src.q > 0) this.vol += (src.q / config.flowMax) * dt;
     if (src.fusion) {
       if (src.q > 0) this.fusion = Math.min(1, this.fusion + (dt * (0.6 + 0.4 * src.q / config.flowMax)) / config.fusionSec);
@@ -133,7 +136,8 @@ export class FoamSim {
     const wallR = surf.r - 1, wallW = config.wallWidth, wallSpread = config.wallSpread;
     const expand = surf.r > prevR ? (surf.r - prevR) / dt / surf.r * config.levelStretch : 0;
     const biasFront = config.forwardBias + wig * config.wiggleFrontBias;
-    const biasBack = config.backPull + wig * config.wiggleBackPull;
+    // 第一片（心形就只有这一片）落点贴在奶泡后缘；停一下再推的后面几片往四面长，才能撑开前一片（郁金香）
+    const biasBack = ((src.piece ?? 0) > 0 ? config.backPullPiece : config.backPull) + wig * config.wiggleBackPull;
     const cone = wig * config.wiggleCone;
     const fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
     // 奶钻到液面下，在落点前方浮上来（ox, oy），奶泡从那里往外长。
@@ -234,7 +238,10 @@ export class FoamSim {
             const off = -sdx * ty + sdy * tx;
             // 紧跟在奶柱后面的一小段不倒流（刚拖出来的心尖不会被拉回去），再往后才开始
             const start = 1 - Math.exp(-((along / config.liftWakeGap) ** 2));
-            const g = wakeV * Math.exp(-(off * off) / wakeW2) * Math.exp(along / wakeL) * start;
+            // 只带后推的几片（郁金香里面那几片变成尖朝下的小花瓣）；第一片不动：心形的凹口、郁金香外圈月牙都保持原样
+            const dv = d[i];
+            const later = dv > 0.05 ? smoothstep(0.5, 1, kf[i] / dv) : 0;
+            const g = wakeV * Math.exp(-(off * off) / wakeW2) * Math.exp(along / wakeL) * start * later;
             ux -= tx * g;
             uy -= ty * g;
           }
@@ -399,8 +406,8 @@ export class FoamSim {
         const gx = (kp(i + 1) - kp(i - 1)) / 2, gy = (kp(i + n) - kp(i - n)) / 2;
         const g = Math.hypot(gx, gy);
         if (g > 1e-3 && g < 1.5) {
-          const dist = Math.abs(kc - Math.floor(kc) - 0.5);
-          const distCells = (0.5 - dist) / g; // 离最近的片边界多少格
+          // 片号是整数，相邻两片的交界在半整数处
+          const distCells = Math.abs(kc - Math.floor(kc) - 0.5) / g; // 离最近的片边界多少格
           gap = 1 - smoothstep(config.pieceGap - 0.8, config.pieceGap + 0.8, distCells);
         }
       }
