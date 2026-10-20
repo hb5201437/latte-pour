@@ -45,6 +45,7 @@ export const PATTERNS = [
   },
   {
     id: 'tulip',
+    locked: true, // 和视频对比还差得远（片的月牙包不下去、树叶纹路太少太粗），先不开放
     name: { en: 'Tulip', zh: '郁金香' },
     outline: heartOutline(1.2),
     layers: 3,
@@ -59,6 +60,7 @@ export const PATTERNS = [
   },
   {
     id: 'rosetta',
+    locked: true, // 和视频对比还差得远（片的月牙包不下去、树叶纹路太少太粗），先不开放
     name: { en: 'Rosetta', zh: '树叶' },
     outline: leafOutline(),
     layers: 6,

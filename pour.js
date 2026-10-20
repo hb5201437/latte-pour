@@ -22,6 +22,7 @@ export class Pour {
     this.lastCross = 0;      // 上次过中线的时间
     this.halfPeriod = 0.15;  // 估计的半个晃动周期（秒）
     this.pausedFor = 0;      // 已经停流多久（秒），停够了再出奶算新的一层（郁金香）
+    this.piece = 0;          // 第几片（推推乐每停一下再推，算新的一片）
     this.hasPoured = false;
     this.wiggle = 0;         // 晃动强度 0~1
   }
@@ -85,6 +86,7 @@ export class Pour {
       if (this.hasPoured && this.pausedFor > config.pushPause) {
         this.crossings = Math.ceil((this.crossings + 1) / config.crossingsPerLine) * config.crossingsPerLine;
         this.lastCross = this.elapsed;
+        this.piece++;
       }
       this.hasPoured = true;
       this.pausedFor = 0;
@@ -95,6 +97,6 @@ export class Pour {
 
     this.lift = lift;
     if (fusion) this.q = config.flowMax * flowScale; // 融合阶段的流量只用来推进融合进度和画奶柱
-    return { x, y, vx: this.vx, vy: this.vy, q: this.q, phase, fusion, lift, wiggle: this.wiggle };
+    return { x, y, vx: this.vx, vy: this.vy, q: this.q, phase, fusion, lift, wiggle: this.wiggle, piece: this.piece };
   }
 }

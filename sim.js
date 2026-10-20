@@ -18,6 +18,9 @@ export class FoamSim {
     this.tmp = new Float32Array(n * n);
     this.p = new Float32Array(n * n);
     this.ptmp = new Float32Array(n * n);
+    // k：这团奶泡是第几片倒进去的（存成 k×d，和 p 一样）。片与片之间画咖啡色的缝（推推乐）
+    this.k = new Float32Array(n * n);
+    this.ktmp = new Float32Array(n * n);
     this.inside = new Uint8Array(n * n);
     this.fusion = 0; // 融合进度 0~1，表面变浅的程度
     this.area = 0;
@@ -46,8 +49,10 @@ export class FoamSim {
   reset() {
     this.d.fill(0);
     this.p.fill(0);
+    this.k.fill(0);
     this.fusion = 0;
-    this.area = 0;   // 累计倒入的奶泡面积（格²）
+    this.area = 0;   // 这一片倒入的奶泡面积（格²）
+    this.piece = 0;
     this.box = null; // 有奶泡的范围 [x0, y0, x1, y1]，只算这块，省性能
   }
 
@@ -93,7 +98,7 @@ export class FoamSim {
       this.fusionX = src.x; this.fusionY = src.y;
       return;
     }
-    const { n, d, tmp, p, ptmp, inside } = this;
+    const { n, d, tmp, p, ptmp, k: kf, ktmp, inside } = this;
     const k = src.q / (2 * Math.PI);
     const sig2 = config.dragRadius * config.dragRadius;
     const dragCut = sig2 * 9;
@@ -106,12 +111,15 @@ export class FoamSim {
     // 左右摆的时候，每一层奶泡从奶柱落点冒出来、被下一层往前推（视频里千层就是这样一层层长出来的），
     // 所以摆得越厉害，往前推得越猛、往后收得越紧
     const wig = src.wiggle ?? 0;
+    const cc = (n - 1) / 2, wallR = n / 2 - 2, wallW = config.wallWidth, wallSpread = config.wallSpread;
     const biasFront = config.forwardBias + wig * config.wiggleFrontBias;
     const biasBack = config.backPull + wig * config.wiggleBackPull;
     const cone = wig * config.wiggleCone;
     const fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
     // 奶钻到液面下，在落点前方浮上来（ox, oy），奶泡从那里往外长。
     // 奶泡越大、流量越大，浮出点离落点越远；抬高收流时奶泡就在落点旁边冒出来，往两侧包成两瓣
+    // 每推一片重新计面积：新的一片在自己的落点附近长出来，把上一片往前顶（推推乐一片片叠起来）
+    if ((src.piece ?? 0) !== this.piece) { this.piece = src.piece ?? 0; this.area = 0; }
     if (src.q > 0) this.area += src.q * dt;
     // 左右晃的时候奶柱一直在动、钻不深，奶泡就在落点附近冒出来，纹路因此在奶柱处收拢
     const ahead = (config.surfaceAhead + config.surfaceAheadFrac * Math.sqrt(this.area / Math.PI) *
@@ -149,6 +157,7 @@ export class FoamSim {
     bx1 = Math.min(n - 1, bx1); by1 = Math.min(n - 1, by1);
     tmp.fill(0);
     ptmp.fill(0);
+    ktmp.fill(0);
 
     for (let y = by0; y <= by1; y++) {
       for (let x = bx0; x <= bx1; x++) {
@@ -186,6 +195,22 @@ export class FoamSim {
           ux += fx * g;
           uy += fy * g;
         }
+        // 杯壁：奶泡推到杯壁附近不能再往外走，改成沿着杯壁往两侧流（月牙两端往下包就是这样来的）
+        if (wallW > 0) {
+          const rx = x - cc, ry = y - cc, rr = Math.hypot(rx, ry);
+          const s = smoothstep(wallR - wallW, wallR, rr);
+          if (s > 0 && rr > 1) {
+            const nx = rx / rr, ny = ry / rr;
+            const radial = ux * nx + uy * ny;
+            if (radial > 0) {
+              ux -= nx * radial * s; uy -= ny * radial * s;
+              // 往远离落点的那一侧流
+              let tx = -ny, ty = nx;
+              if (tx * (x - src.x) + ty * (y - src.y) < 0) { tx = -tx; ty = -ty; }
+              ux += tx * radial * s * wallSpread; uy += ty * radial * s * wallSpread;
+            }
+          }
+        }
         let bx = ux * dt, by = uy * dt;
         const len = Math.hypot(bx, by);
         if (len > vmax) { bx *= vmax / len; by *= vmax / len; }
@@ -201,11 +226,13 @@ export class FoamSim {
         tmp[i] = v;
         // p×d 跟着 d 同比例变化，保证 p 本身不变
         ptmp[i] = v0 > 1e-4 ? sample(p, n, sx, sy) * (v / v0) : 0;
+        ktmp[i] = v0 > 1e-4 ? sample(kf, n, sx, sy) * (v / v0) : 0;
       }
     }
 
     // 奶柱落点注入新奶泡，流量小时落点也变细
     const phase = src.phase ?? 0;
+    const piece = src.piece ?? 0;
     // 贴近液面时落点粗；抬高后只剩一条细线
     const rLow = config.streamRadius * Math.sqrt(src.q / config.flowMax);
     const rIn = rLow + (config.liftLineRadius - rLow) * lift;
@@ -221,6 +248,7 @@ export class FoamSim {
           const i = y * n + x;
           tmp[i] += (1 - tmp[i]) * w;
           ptmp[i] += (phase * tmp[i] - ptmp[i]) * w;
+          ktmp[i] += (piece * tmp[i] - ktmp[i]) * w;
         }
       }
     }
@@ -242,11 +270,13 @@ export class FoamSim {
     this.tmp = d;
     this.p = ptmp;
     this.ptmp = p;
+    this.k = ktmp;
+    this.ktmp = kf;
   }
 
   // 写入 RGBA 像素（长度 n*n*4）
   render(out) {
-    const { n, d, p, bg, vig, grain } = this;
+    const { n, d, p, k: kf, bg, vig, grain } = this;
     const { edgeLo, edgeHi, haloLo, haloStrength, foamFloor, lineFrac, lineStrength } = config;
     // 融合让油脂变浅，入点附近最明显
     const fu0 = this.fusion * config.fusionLighten;
@@ -254,6 +284,7 @@ export class FoamSim {
     const fr2 = (n * 0.35) ** 2;
     const halfBand = lineFrac / 2;
     const ph = i => (d[i] > 0.05 ? p[i] / d[i] : 0);
+    const kp = i => (d[i] > 0.05 ? kf[i] / d[i] : 0);
     for (let i = 0; i < n * n; i++) {
       const v = d[i];
       // 轮廓用周围 5 格的平均值，边缘有一格多的柔和过渡，放大后不会出锯齿
@@ -301,11 +332,24 @@ export class FoamSim {
         }
       }
       fr += (190 - fr) * la; fg += (128 - fg) * la; fb += (78 - fb) * la;
+      // 片与片之间的缝：k 跨过半整数处，奶泡在这里变薄、透出咖啡色（比千层纹宽、颜色更深）
+      let gap = 0;
+      if (a > 0.01 && i > n && i < n * n - n && (i % n) > 0 && (i % n) < n - 1) {
+        const kc = kp(i);
+        const gx = (kp(i + 1) - kp(i - 1)) / 2, gy = (kp(i + n) - kp(i - n)) / 2;
+        const g = Math.hypot(gx, gy);
+        if (g > 1e-3 && g < 1.5) {
+          const dist = Math.abs(kc - Math.floor(kc) - 0.5);
+          const distCells = (0.5 - dist) / g; // 离最近的片边界多少格
+          gap = 1 - smoothstep(config.pieceGap - 0.8, config.pieceGap + 0.8, distCells);
+        }
+      }
+      const aa = a * (1 - gap);
       const j = i * 4;
       const vg = vig[i];
-      out[j] = (br + (fr - br) * a) * vg;
-      out[j + 1] = (bgc + (fg - bgc) * a) * vg;
-      out[j + 2] = (bb + (fb - bb) * a) * vg;
+      out[j] = (br + (fr - br) * aa) * vg;
+      out[j + 1] = (bgc + (fg - bgc) * aa) * vg;
+      out[j + 2] = (bb + (fb - bb) * aa) * vg;
       out[j + 3] = 255;
     }
   }
