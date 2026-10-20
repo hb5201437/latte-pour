@@ -53,7 +53,7 @@ export const config = {
 
   // —— 计数 ——
   // GoatCounter 站点代码（注册后 https://<代码>.goatcounter.com 里的 <代码>），留空则不统计
-  goatcounterCode: '',
+  goatcounterCode: 'lattepour',
 
   // —— 评分（第4步）——
   scoreIouZero: 0.62,     // 和心形模板的重叠率低于这个记 0 分
