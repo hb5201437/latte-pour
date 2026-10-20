@@ -53,6 +53,7 @@ export class FoamSim {
     this.k.fill(0);
     this.vol = 0;
     this.pulled = false;
+    this.lastOx = this.lastOy = null;
     this.fusion = 0;
     this.vol = 0;    // 倒进杯子的总量（满流量倒 1 秒 = 1），决定杯子放平到什么程度
     this.area = 0;   // 这一片倒入的奶泡面积（格²）
@@ -305,20 +306,30 @@ export class FoamSim {
     const rLow = config.streamRadius * Math.sqrt(src.q / config.flowMax);
     const rIn = rLow + (config.liftLineRadius - rLow) * lift;
     if (rIn > 0.05) {
-      // 边缘按距离给部分浓度，细奶柱也是连续的线而不是一串点
+      // 边缘按距离给部分浓度，细奶柱也是连续的线而不是一串点。
+      // 拉花缸一帧移动好几格（快速收尾）时，把上一帧到这一帧之间也补上，线不会断成一串点
       const reach = rIn + 1;
-      const x0 = Math.max(0, Math.floor(ox - reach)), x1 = Math.min(n - 1, Math.ceil(ox + reach));
-      const y0 = Math.max(0, Math.floor(oy - reach)), y1 = Math.min(n - 1, Math.ceil(oy + reach));
-      for (let y = y0; y <= y1; y++) {
-        for (let x = x0; x <= x1; x++) {
-          const w = Math.min(1, rIn + 0.5 - Math.hypot(x - ox, y - oy));
-          if (w <= 0) continue;
-          const i = y * n + x;
-          tmp[i] += (1 - tmp[i]) * w;
-          ptmp[i] += (phase * tmp[i] - ptmp[i]) * w;
-          ktmp[i] += (piece * tmp[i] - ktmp[i]) * w;
+      const px = this.lastOx ?? ox, py = this.lastOy ?? oy;
+      const dist = Math.hypot(ox - px, oy - py);
+      const stamps = dist > 1 && dist < n / 4 ? Math.ceil(dist) : 1;
+      for (let s = 1; s <= stamps; s++) {
+        const sx = px + (ox - px) * (s / stamps), sy = py + (oy - py) * (s / stamps);
+        const x0 = Math.max(0, Math.floor(sx - reach)), x1 = Math.min(n - 1, Math.ceil(sx + reach));
+        const y0 = Math.max(0, Math.floor(sy - reach)), y1 = Math.min(n - 1, Math.ceil(sy + reach));
+        for (let y = y0; y <= y1; y++) {
+          for (let x = x0; x <= x1; x++) {
+            const w = Math.min(1, rIn + 0.5 - Math.hypot(x - sx, y - sy));
+            if (w <= 0) continue;
+            const i = y * n + x;
+            tmp[i] += (1 - tmp[i]) * w;
+            ptmp[i] += (phase * tmp[i] - ptmp[i]) * w;
+            ktmp[i] += (piece * tmp[i] - ktmp[i]) * w;
+          }
         }
       }
+      this.lastOx = ox; this.lastOy = oy;
+    } else {
+      this.lastOx = this.lastOy = null;
     }
 
     // 更新奶泡范围

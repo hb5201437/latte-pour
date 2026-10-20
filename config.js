@@ -42,7 +42,7 @@ export const config = {
   pourStartBack: 0.45,    // 起倒位置：从杯心往后（远离心尖）多少个半径
   pushAccel: 9,           // 加速度峰值超过这个（m/s²）算"向前一推"
   pushIgnoreMs: 800,      // 刚开始倒的这段时间不检测推，避免前倾时的抖动误判
-  tiltPullSpeed: 300,     // 收尾时细奶柱自动往前划的速度（格/秒）
+  tiltPullSpeed: 520,     // 收尾时细奶柱自动往前划的速度（格/秒），整段拉线约 0.3 秒，和视频一样快
   pullEnd: 0.75,          // 划到杯心往前多少个半径处结束
 
   // —— 千层纹 ——
@@ -121,9 +121,9 @@ export const config = {
   liftSqueezeRadius: 16,  // 往中线压的影响范围（格）
   liftLineRadius: 0.6,    // 抬高后奶柱留下的细线半径（格）
   liftJet: 0.5,           // 抬高后奶柱冲力（相对满流量时）
-  liftRaiseMs: 400,       // 收尾时先原地抬高多久（流量慢慢收小，两瓣变鼓、凹口变深），再往前推
+  liftRaiseMs: 150,       // 收尾时先原地抬高多久（流量慢慢收小，两瓣变鼓、凹口变深），再往前推
   liftJetWiden: 1.0,      // 抬高后奶柱冲击范围变宽的比例
-  maxStepCells: 4,        // 每帧最大位移，防止数值炸开
+  maxStepCells: 8,        // 每帧最大位移，防止数值炸开
   foamAgeRate: 0.15,      // 旧奶泡变成奶油色的速度，新旧交界会显出纹路
   foamFloor: 0.62,        // 旧奶泡最低浓度
   edgeLo: 0.30,           // 浓度在 edgeLo~edgeHi 之间过渡成白色
