@@ -19,13 +19,15 @@ class FluidFoam {
     this.n = n;
     this.isFluid = true;
     this.canvas = document.createElement('canvas');
-    this.canvas.width = this.canvas.height = Math.min(1024, quality * 1.5);
+    this.canvas.width = this.canvas.height = Math.min(1024, quality * 2);
     const gl = this.canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true, premultipliedAlpha: true });
     if (!gl) throw new Error('没有 WebGL2');
     P.fusionSec = config.fusionSec;
     // ?fp={"参数":值} 临时覆盖流体参数（调手感用）
     try { Object.assign(P, JSON.parse(new URLSearchParams(location.search).get('fp') || '{}')); } catch { /* 忽略 */ }
-    this.fluid = new FluidSim(gl, quality);
+    // 奶泡层用两倍细的网格（?m= 可以改，调试用）
+    const m = Number(new URLSearchParams(location.search).get('m')) || quality * 2;
+    this.fluid = new FluidSim(gl, quality, Math.min(m, gl.getParameter(gl.MAX_TEXTURE_SIZE)));
     this.reset();
     if (new URLSearchParams(location.search).get('debug')) globalThis.__foam = this;
   }
@@ -74,7 +76,7 @@ class FluidFoam {
   // 评分前调用：把奶泡读回来（n×n，y 朝下）。
   // white：白色奶泡覆盖度（数纹路用）；d：图案范围 = 白色奶泡 + 冒上来的奶咖色线（比轮廓用）
   readback() {
-    const N = this.fluid.N, n = this.n, f = this.fluid.readFoam();
+    const N = this.fluid.M, n = this.n, f = this.fluid.readFoam();
     const d = new Float32Array(n * n), white = new Float32Array(n * n), s = N / n;
     for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
       const gx = Math.min(N - 1, Math.floor((x + 0.5) * s)), gy = Math.min(N - 1, Math.floor((n - 1 - y + 0.5) * s));

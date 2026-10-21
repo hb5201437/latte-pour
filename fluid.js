@@ -272,7 +272,7 @@ export const P = {
   sinkArea: 0.5,     // 抬高时奶柱往下吸的面积（每秒）：两边的奶泡跟着往中间陷、合拢，收尾不留缝
   sinkR: 0.035,
   foamRate: 100,
-  foamR: 0.04,
+  foamR: 0.03,       // 冒出点"换成新颜色"的范围：比水流的源小，新奶把旧纹路往外推而不是盖掉
   lineRate: 20,  
   lineR: 0.008,
   mixRate: 0.8,
@@ -281,17 +281,20 @@ export const P = {
   haloRate: 0.05,
   fusionSec: 0.8,
   wigMin: 0.15,      // 横移速度峰值低于这个不算在摇（一直出白）
-  whiteSlow: 0.62,    // 横移速度不到这一轮峰值的这个比例：冒上来的是奶泡（摆到两端）
-  whiteFast: 0.82,   // 超过这个比例：冒上来的是咖啡（摆到中段，奶柱钻得深）
+  whiteSlow: 0.7,    // 横移速度不到这一轮峰值的这个比例：冒上来的是奶泡（摆到两端）
+  whiteFast: 0.88,   // 超过这个比例：冒上来的是咖啡（摆到中段，奶柱钻得深）
   onsetSec: 0.2,    // 停一下再出奶时，先冒一点咖啡再出白（郁金香片与片之间的线）
   pauseSec: 0.08,
   diveSlow: 0.5,     // 往前移动快过这个（杯口直径/秒），浮上来的奶开始变少
   diveFast: 1.0,     // 快过这个，奶全部钻到下面去
   latTau: 0.05,      // 横移速度的平滑时间（秒）
+  upLagStill: 0.12,  // 原地摇时浮出点跟着奶柱横移的延迟
+  backSlow: 0.03,    // 往后退的速度（杯口直径/秒）从这里开始算"在往后退"
+  backFast: 0.12,
   upLagSec: 0.04,   // 浮出点跟着奶柱横移的延迟（太大左右的叶子连成对称的弧，太小两边断开）
   spread: 0.6,       // 浮上来的奶里，有多少是从奶泡底下钻过去、把整片奶泡撑开的
   spreadL: 0.6,     // 撑开的作用随离浮出点的距离衰减
-  sharpen: 1.5,       // 分相的强度
+  sharpen: 0.5,       // 分相的强度
   oneWay: 0,        // 1 = 只在往右摆的中段冒咖啡（一个来回一道线），0 = 两个方向都冒
 };
 
@@ -299,9 +302,12 @@ const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
 const foamOnNow = sim => (sim.flowTime > P.fusionSec ? 1 : 0);
 
 export class FluidSim {
-  constructor(gl, N = 256) {
+  // N：水流（速度、压力）的网格；M：奶泡这一层的网格。水流是平滑的，粗一点没关系；
+  // 纹路细不细只看奶泡这一层，放到更细的网格上，线条才不会被搬运抹糊
+  constructor(gl, N = 256, M = N * 2) {
     this.gl = gl;
     this.N = N;
+    this.M = M;
     if (!gl.getExtension('EXT_color_buffer_float')) throw new Error('需要 EXT_color_buffer_float');
     gl.getExtension('OES_texture_float_linear');
     this.prog = {};
@@ -311,15 +317,15 @@ export class FluidSim {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
     gl.enableVertexAttribArray(0);
     gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
-    const T = () => this.target();
+    const T = () => this.target(N), F = () => this.target(M);
     this.vel = [T(), T()]; this.vel0 = T();
     this.pres = [T(), T()]; this.div = T();
-    this.foam = [T(), T()]; this.hat = T();
+    this.foam = [F(), F()]; this.hat = F();
     this.reset();
   }
 
-  target() {
-    const gl = this.gl, N = this.N;
+  target(N) {
+    const gl = this.gl;
     const tex = gl.createTexture();
     gl.bindTexture(gl.TEXTURE_2D, tex);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA16F, N, N, 0, gl.RGBA, gl.HALF_FLOAT, null);
@@ -330,16 +336,18 @@ export class FluidSim {
     const fb = gl.createFramebuffer();
     gl.bindFramebuffer(gl.FRAMEBUFFER, fb);
     gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, tex, 0);
-    return { tex, fb };
+    return { tex, fb, size: N };
   }
 
   // 用某个着色器画到目标（null = 屏幕）
   run(name, out, uniforms = {}, textures = {}) {
     const gl = this.gl, pr = this.prog[name];
     gl.useProgram(pr.p);
-    if (out) { gl.bindFramebuffer(gl.FRAMEBUFFER, out.fb); gl.viewport(0, 0, this.N, this.N); }
+    if (out) { gl.bindFramebuffer(gl.FRAMEBUFFER, out.fb); gl.viewport(0, 0, out.size, out.size); }
     else { gl.bindFramebuffer(gl.FRAMEBUFFER, null); gl.viewport(0, 0, gl.drawingBufferWidth, gl.drawingBufferHeight); }
-    if (pr.u.texel) gl.uniform2f(pr.u.texel, 1 / this.N, 1 / this.N);
+    // 格距按画到的目标算（画到屏幕时按奶泡网格算，法线、杯沿抗锯齿用）
+    const sz = out ? out.size : this.M;
+    if (pr.u.texel) gl.uniform2f(pr.u.texel, 1 / sz, 1 / sz);
     let unit = 0;
     for (const k in textures) {
       gl.activeTexture(gl.TEXTURE0 + unit);
@@ -365,6 +373,7 @@ export class FluidSim {
     this.latPeak = 0;
     this.upX = null;
     this.fwdSpeed = 0;
+    this.backSpeed = 0;
     this.foamArea = 0;
     this.pausedFor = 0;
     this.sinceOnset = 0;
@@ -409,7 +418,11 @@ export class FluidSim {
     const ahead = P.aheadLow + P.aheadFlow * low;
     // 浮出点：落点前方；横向上慢慢跟着落点走（左右摇时浮出点基本留在中间，冒上来的一道道弧跨过中线）
     if (this.upX == null || q === 0) this.upX = inp.x;
-    this.upX += (inp.x - this.upX) * (1 - Math.exp(-dt / P.upLagSec));
+    // 原地摇：奶在奶泡底下聚成一团从中间浮上来（跟得慢，冒出横跨中线的完整弧）；
+    // 往后退：奶柱每摆一次都碰到新鲜咖啡，奶就在奶柱旁边冒出来（跟得快，左右交错长出叶子）
+    this.backSpeed = (this.backSpeed ?? 0) + (Math.max(0, -pv[1]) - (this.backSpeed ?? 0)) * (1 - Math.exp(-dt / 0.15));
+    const lag = P.upLagStill + (P.upLagSec - P.upLagStill) * ss(P.backSlow, P.backFast, this.backSpeed);
+    this.upX += (inp.x - this.upX) * (1 - Math.exp(-dt / lag));
     const up = [this.upX + fwd[0] * ahead, inp.y + fwd[1] * ahead];
     const Q = foamOn * low * P.upArea;
     const upAmp = Q * (1 - P.spread) / (Math.PI * P.upR * P.upR);
@@ -458,7 +471,7 @@ export class FluidSim {
 
   // 把奶泡场读回 CPU（评分用）：RGBA 浮点，行 0 = 纹理 v=0（拉花缸那侧）
   readFoam() {
-    const gl = this.gl, N = this.N, out = new Float32Array(N * N * 4);
+    const gl = this.gl, N = this.M, out = new Float32Array(N * N * 4);
     gl.bindFramebuffer(gl.FRAMEBUFFER, this.foam[0].fb);
     gl.readPixels(0, 0, N, N, gl.RGBA, gl.FLOAT, out);
     return out;
