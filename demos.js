@@ -17,8 +17,10 @@ export function renderDemo(pattern, key) {
 
 function run(pattern, cacheKey) {
   const steps = [];
-  for (const sg of pattern.demo) for (let t = 0; t < sg.t; t += DT) steps.push({ sg, f: t / sg.t });
   if (!shared) shared = createFoam(N, 256);
+  // GPU 奶泡出白快，用它自己那套更短的示范倒法
+  const demo = shared.isFluid && pattern.fluid?.demo || pattern.demo;
+  for (const sg of demo) for (let t = 0; t < sg.t; t += DT) steps.push({ sg, f: t / sg.t });
   const sim = shared, pour = new Pour(), c = N / 2;
   sim.reset();
   let i = 0, tt = 0;
