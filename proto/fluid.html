@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Fluid Foam Prototype</title>
+<style>
+  :root { --bg: #1d1410; --fg: #f3e9dc; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--fg); font: 14px -apple-system, sans-serif; }
+  body { display: flex; flex-direction: column; align-items: center; gap: 10px; padding: 12px 16px; box-sizing: border-box; }
+  canvas { width: min(92vw, 70vh); height: min(92vw, 70vh); touch-action: none; border-radius: 50%; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; }
+  button { background: #3a2a20; color: var(--fg); border: 1px solid #5a4434; border-radius: 8px; padding: 6px 12px; font: inherit; }
+  p { margin: 0; opacity: 0.7; text-align: center; max-width: 36em; }
+</style>
+</head>
+<body>
+<canvas id="c" width="720" height="720"></canvas>
+<div class="bar">
+  <button data-demo="heart">Heart demo</button>
+  <button data-demo="tulip">Tulip demo</button>
+  <button data-demo="rosetta">Rosetta demo</button>
+  <button id="reset">Reset</button>
+  <button id="vel">Show flow</button>
+</div>
+<p>Hold to pour, drag to move. Swipe up fast (or hold Shift) to lift and pull through.</p>
+<script type="module">
+import { FluidSim, P } from './fluid.js';
+import { PATTERNS } from '../patterns.js';
+
+const cv = document.getElementById('c');
+const gl = cv.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true });
+const params = new URLSearchParams(location.search);
+const sim = new FluidSim(gl, Number(params.get('n')) || 256);
+let showVel = false;
+
+// 把 patterns.js 的示范倒法（y：-1~1，正 = 靠近拉花缸 = 屏幕下方；wig：左右摆幅占半径的比例）
+// 展开成每帧的输入
+function expand(segs, dt = 1 / 60) {
+  const out = []; let tt = 0;
+  for (const sg of segs) for (let t = 0; t < sg.t; t += dt) {
+    const f = t / sg.t, y = sg.y0 + (sg.y1 - sg.y0) * f;
+    const x = Math.sin(tt * (sg.hz || 0) * 2 * Math.PI) * (sg.wig || 0);
+    out.push({ x: 0.5 + x * 0.5, y: 0.5 - y * 0.5, q: sg.flow ?? 1, lift: sg.lift ?? 0 });
+    tt += dt;
+  }
+  return out;
+}
+
+// 脚本模式：一口气按固定步长跑完（不依赖 requestAnimationFrame），跑完画一帧
+function runDemo(id, until = Infinity) {
+  sim.reset();
+  const frames = expand(PATTERNS.find(p => p.id === id).demo);
+  frames.slice(0, Math.min(frames.length, until)).forEach(f => sim.step(1 / 60, f));
+  // 倒完让液面再流一会儿
+  const settle = until >= frames.length ? 30 : 0;
+  const last = frames[frames.length - 1];
+  for (let i = 0; i < settle; i++) sim.step(1 / 60, { ...last, q: 0, lift: 0 });
+  sim.render(showVel);
+  return frames.length;
+}
+
+window.proto = { sim, P, runDemo, expand, gl };
+
+for (const b of document.querySelectorAll('[data-demo]')) b.onclick = () => { playing = expand(PATTERNS.find(p => p.id === b.dataset.demo).demo); sim.reset(); };
+document.getElementById('reset').onclick = () => sim.reset();
+document.getElementById('vel').onclick = () => { showVel = !showVel; };
+
+// 交互：按住倒奶，拖动移动；往上快速划或按住 Shift = 抬高
+let ptr = null, shift = false, playing = null;
+addEventListener('keydown', e => { if (e.key === 'Shift') shift = true; });
+addEventListener('keyup', e => { if (e.key === 'Shift') shift = false; });
+const toUv = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) / r.width, 1 - (e.clientY - r.top) / r.height]; };
+cv.addEventListener('pointerdown', e => { cv.setPointerCapture(e.pointerId); const [x, y] = toUv(e); ptr = { x, y, vy: 0 }; });
+cv.addEventListener('pointermove', e => { if (!ptr) return; const [x, y] = toUv(e); ptr.x = x; ptr.y = y; });
+cv.addEventListener('pointerup', () => { ptr = null; });
+
+let lastT = null, lastY = null, vy = 0;
+function frame(t) {
+  const dt = Math.min(1 / 30, lastT == null ? 1 / 60 : (t - lastT) / 1000);
+  lastT = t;
+  if (playing && playing.length) sim.step(1 / 60, playing.shift());
+  else if (ptr) {
+    if (lastY != null) vy += ((ptr.y - lastY) / dt - vy) * 0.3;
+    lastY = ptr.y;
+    const lift = shift ? 1 : Math.min(1, Math.max(0, (vy - 0.6) / 0.8));
+    sim.step(dt, { x: ptr.x, y: ptr.y, q: 1, lift });
+  } else { lastY = null; vy = 0; sim.step(dt, { x: 0.5, y: 0.5, q: 0, lift: 0 }); }
+  sim.render(showVel);
+  requestAnimationFrame(frame);
+}
+if (!params.has('static')) requestAnimationFrame(frame);
+</script>
+</body>
+</html>
