@@ -281,8 +281,10 @@ export const P = {
   haloRate: 0.05,
   fusionSec: 0.8,
   wigMin: 0.15,      // 横移速度峰值低于这个不算在摇（一直出白）
-  whiteSlow: 0.7,    // 横移速度不到这一轮峰值的这个比例：冒上来的是奶泡（摆到两端）
-  whiteFast: 0.88,   // 超过这个比例：冒上来的是咖啡（摆到中段，奶柱钻得深）
+  whiteSlow: 0.85,    // 横移速度不到这一轮峰值的这个比例：冒上来的是奶泡（摆到两端）
+  whiteFast: 0.96,
+  whiteSlowBack: 0.94, // 往后退时：横移速度超过峰值的这个比例才冒咖啡（只有过中线那一下）
+  whiteFastBack: 0.99,   // 超过这个比例：冒上来的是咖啡（摆到中段，奶柱钻得深）
   onsetSec: 0.2,    // 停一下再出奶时，先冒一点咖啡再出白（郁金香片与片之间的线）
   pauseSec: 0.08,
   diveSlow: 0.5,     // 往前移动快过这个（杯口直径/秒），浮上来的奶开始变少
@@ -404,7 +406,11 @@ export class FluidSim {
     // 峰值：快速跟上、慢慢回落（大约一个摆动周期）
     this.latPeak = Math.max(this.latSpeed, this.latPeak * Math.exp(-dt / 1.0));
     const rel = this.latPeak > P.wigMin && (!P.oneWay || this.latVel > 0) ? this.latSpeed / this.latPeak : 0;
-    const white = (1 - ss(P.whiteSlow, P.whiteFast, rel)) * ss(0, P.onsetSec, this.sinceOnset);
+    // 往后退拉叶子时，白奶几乎一直在冒，只在奶柱过中线的一瞬间挤出一条细褐线（叶与叶的分界）；
+    // 原地摇的扇形褐线宽一些
+    const bk = ss(P.backSlow, P.backFast, this.backSpeed ?? 0);
+    const wS = P.whiteSlow + (P.whiteSlowBack - P.whiteSlow) * bk, wF = P.whiteFast + (P.whiteFastBack - P.whiteFast) * bk;
+    const white = (1 - ss(wS, wF, rel)) * ss(0, P.onsetSec, this.sinceOnset);
     this.debug = { white, rel, latSpeed: this.latSpeed, latPeak: this.latPeak };
     // 奶泡面积（估计）：冒上来的白色部分 + 被撑开的部分；用来把"撑开"的总量分摊到整片奶泡上
     this.foamArea += dt * foamOnNow(this) * q * (1 - lift) * P.upArea;
