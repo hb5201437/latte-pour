@@ -1,5 +1,5 @@
 import { config } from './config.js';
-import { FoamSim } from './sim.js';
+import { createFoam } from './fluidfoam.js';
 import { Pour } from './pour.js';
 import { TiltInput } from './tilt.js';
 import { lockScreenAngle, unlockScreenAngle } from './sensors.js';
@@ -20,11 +20,23 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   let pattern = initialPattern;
   const ctx = canvas.getContext('2d');
   const n = config.gridSize;
-  const sim = new FoamSim(n);
+  // 奶泡：GPU 真流体（不支持时自动退回旧模型）
+  const sim = createFoam(n);
   const off = document.createElement('canvas');
   off.width = off.height = n;
   const offCtx = off.getContext('2d');
   const img = offCtx.createImageData(n, n);
+  // GPU 奶泡分三层叠：底层 2D（桌子、杯身、内壁）、中层液面（WebGL 画布直接显示，
+  // 不复制进 2D 画布，每帧省掉一次跨画布同步）、顶层 2D（光泽、杯沿、拉花缸）
+  let top = null, topCtx = null;
+  if (sim.isFluid) {
+    const el = sim.canvas;
+    el.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none;transform-origin:0 0';
+    top = document.createElement('canvas');
+    top.style.cssText = 'position:fixed;inset:0;pointer-events:none';
+    canvas.after(el, top);
+    topCtx = top.getContext('2d');
+  }
 
   let W = 0, H = 0, dpr = 1, cx = 0, cy = 0, R = 0;
   // 静止图层（布局变化时画一次）：木桌 + 杯碟 + 杯子；液面光泽
@@ -62,6 +74,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   let accelShow = 0;
   let fps = 60;
   let frameMs = 0; // 每帧计算+绘制耗时
+  const prof = { update: 0, draw: 0 };
   let lift = 0; // 当前抬高程度
   // 拉花缸位置（缸嘴对准的入点，格坐标），默认在杯心后方
   const c0 = n / 2;
@@ -84,6 +97,10 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     canvas.height = Math.round(H * dpr);
     canvas.style.width = W + 'px';
     canvas.style.height = H + 'px';
+    if (top) {
+      top.width = canvas.width; top.height = canvas.height;
+      top.style.width = W + 'px'; top.style.height = H + 'px';
+    }
     // 杯子上方留出杯碟，下方留出拉花缸（缸身 + 把手）的位置
     const above = 1.15, below = 2.0;
     R = Math.min(W * config.cupRadiusFrac, (H - 24) / (above + below));
@@ -227,6 +244,9 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
       }
       sim.step(dt, pour.update(dt, p.x, p.y, paused ? 0 : 1));
       trackVolume(dt);
+      // 快速一划收尾，拉到杯子前沿就结束（和陀螺仪模式一样），不然奶柱停在杯壁上会把奶泡堆成一团
+      const ahead = (p.x - n / 2) * fwd.x + (p.y - n / 2) * fwd.y;
+      if (state === 'pouring' && (pour.lift || 0) > 0.5 && ahead >= config.pullEnd * n / 2) finish();
     } else {
       p.x = entry.x; p.y = entry.y;
     }
@@ -306,7 +326,8 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     ctx.clearRect(0, 0, W, H);
 
     // 溢出时轻微一震
-    if (shake > 0) ctx.translate((Math.random() - 0.5) * shake, (Math.random() - 0.5) * shake);
+    const shX = shake > 0 ? (Math.random() - 0.5) * shake : 0, shY = shake > 0 ? (Math.random() - 0.5) * shake : 0;
+    ctx.translate(shX, shY);
 
     // 木桌（预先画好的）
     ctx.drawImage(sceneLayer, 0, 0, W, H);
@@ -327,18 +348,41 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     ctx.fillStyle = wallG;
     ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R);
     // 液面：水平的，按镜头角度压扁
-    sim.render(img.data);
-    offCtx.putImageData(img, 0, 0);
-    ctx.beginPath();
-    ctx.ellipse(cx, cy, R, R * sqL, 0, 0, Math.PI * 2);
-    ctx.clip();
-    // 奶泡边缘已经抗锯齿过，普通双线性放大就够，比"最高质量"快十几倍
-    ctx.imageSmoothingEnabled = true;
-    ctx.imageSmoothingQuality = 'low';
-    ctx.drawImage(off, cx - R, cy - R * sqL, 2 * R, 2 * R * sqL);
-    ctx.drawImage(glossLayer, cx - R, cy - R * sqL, 2 * R, 2 * R * sqL);
-    ctx.restore();
+    if (sim.isFluid) {
+      ctx.restore();
+      // 中层：WebGL 画布按液面椭圆摆好位置（杯口外面着色器里已经是透明的）
+      const el = sim.canvas;
+      el.style.width = el.style.height = 2 * R + 'px';
+      el.style.transform = `translate(${cx - R + shX}px, ${cy - R * sqL + shY}px) scale(1, ${sqL})`;
+      sim.render();
+      // 之后的东西都画在顶层
+      topCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      topCtx.clearRect(0, 0, W, H);
+      topCtx.translate(shX, shY);
+      topCtx.save();
+      topCtx.beginPath();
+      topCtx.ellipse(cx, cy, R, R * sqL, 0, 0, Math.PI * 2);
+      topCtx.clip();
+      topCtx.drawImage(glossLayer, cx - R, cy - R * sqL, 2 * R, 2 * R * sqL);
+      topCtx.restore();
+    } else {
+      sim.render(img.data);
+      offCtx.putImageData(img, 0, 0);
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, R, R * sqL, 0, 0, Math.PI * 2);
+      ctx.clip();
+      // 奶泡边缘已经抗锯齿过，普通双线性放大就够，比"最高质量"快十几倍
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'low';
+      ctx.drawImage(off, cx - R, cy - R * sqL, 2 * R, 2 * R * sqL);
+      ctx.drawImage(glossLayer, cx - R, cy - R * sqL, 2 * R, 2 * R * sqL);
+      ctx.restore();
+    }
+    drawTop(sim.isFluid ? topCtx : ctx);
+  }
 
+  // 液面以上的东西：杯沿、杯满环、溢出、拉花缸、提示文字
+  function drawTop(ctx) {
     // 杯口粗陶边（按杯口扁度压扁）
     ctx.drawImage(rimLayer, cx - 1.15 * R, cy - 1.15 * R * sqR, 2.3 * R, 2.3 * R * sqR);
 
@@ -421,13 +465,18 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
 
   function frame(now) {
     const raw = last ? (now - last) / 1000 : 1 / 60;
-    const dt = Math.min(0.033, raw);
+    // 两帧时间戳相同（时间差为 0）时跳过更新，否则速度 = 位移 / 0 会变成无穷大
+    const dt = Math.min(0.033, Math.max(raw, 0.001));
     last = now;
     fps += (1 / Math.max(raw, 0.001) - fps) * 0.05;
     const t0 = performance.now();
     update(dt);
+    const t1 = performance.now();
     draw();
-    frameMs += (performance.now() - t0 - frameMs) * 0.05;
+    const t2 = performance.now();
+    frameMs += (t2 - t0 - frameMs) * 0.05;
+    prof.update += (t1 - t0 - prof.update) * 0.05;
+    prof.draw += (t2 - t1 - prof.draw) * 0.05;
     requestAnimationFrame(frame);
   }
 
@@ -438,9 +487,10 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   return {
     isTilt: mode === 'tilt',
     // 调试用：当前倒奶状态
+    prof: () => ({ fps: +fps.toFixed(1), frameMs: +frameMs.toFixed(2), update: +prof.update.toFixed(2), draw: +prof.draw.toFixed(2) }),
     debugState: () => ({ state, x: +p.x.toFixed(1), y: +p.y.toFixed(1), q: Math.round(pour.q), lift: +(pour.lift || 0).toFixed(2), piece: pour.piece, poured: +poured.toFixed(2), paused: touchPausedFor, tilt: hud && +hud.tilt.toFixed(1), flow: hud && +(hud.flow || 0).toFixed(2), base: tiltIn && +tiltIn.basePitch.toFixed(1), milk: +pit.milk.toFixed(2) }),
     setPattern(p) { pattern = p; },
-    foamCanvas: off, // 最后一帧渲染好的奶泡，保存图片用
+    foamCanvas: sim.isFluid ? sim.canvas : off, // 最后一帧渲染好的奶泡，保存图片用
     reset() {
       sim.reset();
       elapsed = 0;

@@ -43,6 +43,26 @@ function countLayers(sim, cxCell, cyCell) {
   return layers;
 }
 
+// GPU 真流体：纹路和片与片的分界都是真的咖啡色细线，直接数线。
+// 沿前后方向走，在中线左右各偏一点走（避开收尾拉出的那条中线），数图案里面"白 → 咖啡色 → 白"出现了几次
+function countLines(sim, cxCell, cyCell, halfW) {
+  const n = sim.n, d = sim.white || sim.d, fx = Math.cos(config.forwardAngle), fy = Math.sin(config.forwardAngle);
+  const lx = -fy, ly = fx;
+  let best = 0;
+  for (const off of [-0.35, -0.2, 0.2, 0.35]) {
+    let seenWhite = false, inGap = false, lines = 0;
+    for (let t = -n; t <= n; t += 0.5) {
+      const x = Math.round(cxCell + fx * t + lx * off * halfW), y = Math.round(cyCell + fy * t + ly * off * halfW);
+      if (x < 1 || y < 1 || x >= n - 1 || y >= n - 1) continue;
+      const v = d[y * n + x];
+      if (v > 0.6) { if (inGap) lines++; seenWhite = true; inGap = false; }
+      else if (v < 0.3 && seenWhite) inGap = true;
+    }
+    best = Math.max(best, lines);
+  }
+  return best;
+}
+
 // 形态学闭运算：先膨胀再腐蚀 r 格，把片与片之间的咖啡色细缝填上，只看整体轮廓（郁金香用）
 function closeMask(m, r) {
   const grow = (src, val) => {
@@ -88,6 +108,9 @@ function inside(poly, x, y) {
 // sim：FoamSim；pattern：patterns.js 里的图案。返回 { score: 0~100, tier, tip, iou, coverage, layers }
 // tip：扣分最多的那一项（pull / back / pieces / layers / notch / small / shape），没有明显问题时为 null
 export function scorePour(sim, pattern) {
+  if (sim.isFluid && !sim.d) sim.readback();
+  // GPU 真流体用自己的模板和分数区间
+  if (sim.isFluid && pattern.fluid) pattern = { ...pattern, iouZero: undefined, iouFull: undefined, ...pattern.fluid, id: pattern.id + ':fluid' };
   const TEMPLATE = template(pattern);
   const n = sim.n, step = n / G;
   let mask = new Uint8Array(G * G);
@@ -97,7 +120,9 @@ export function scorePour(sim, pattern) {
       if (v > 0.45) mask[y * G + x] = 1;
     }
   }
-  if (pattern.closeGaps) mask = closeMask(mask, pattern.closeGaps);
+  // 真流体里纹路是真的咖啡色线，比轮廓时先把线填上
+  const close = sim.isFluid ? Math.max(2, pattern.closeGaps || 0) : pattern.closeGaps;
+  if (close) mask = closeMask(mask, close);
   let area = 0, sx = 0, sy = 0;
   for (let i = 0; i < G * G; i++) if (mask[i]) { area++; sx += i % G; sy += (i / G) | 0; }
   // 杯面积（以评分网格计）里奶泡占的比例；太少说明基本没倒出图案
@@ -107,7 +132,9 @@ export function scorePour(sim, pattern) {
 
   const cx = sx / area, cy = sy / area;
   const scale = Math.sqrt(area); // 模板面积为 1，缩放后与奶泡同面积
-  const layers = pattern.pieces ? countPieces(sim) : countLayers(sim, (cx + 0.5) * step, (cy + 0.5) * step);
+  const layers = sim.isFluid
+    ? (pattern.pieces ? sim.pieces : countLines(sim, (cx + 0.5) * step, (cy + 0.5) * step, scale * step * 0.5))
+    : pattern.pieces ? countPieces(sim) : countLayers(sim, (cx + 0.5) * step, (cy + 0.5) * step);
   // 模板外接框，框外的格直接跳过多边形判断
   let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
   for (const [x, y] of TEMPLATE) {
@@ -166,13 +193,16 @@ export function scorePour(sim, pattern) {
   if (need) factors[pattern.pieces ? 'pieces' : 'layers'] = 0.35 + 0.65 * Math.min(1, layers / need);
   // 树叶要边摆边往后退拉出叶脉：退得不够按比例扣分
   if (pattern.needBack) factors.back = 0.35 + 0.65 * Math.min(1, (sim.backTravel || 0) / (pattern.needBack * sim.n / 2));
+  // 一口气倒完的图案（心形）：停下来再推了好几次要扣分
+  if (pattern.maxPieces && sim.pieces > pattern.maxPieces) factors.onePour = 0.5;
   // 要求收尾的图案（郁金香、树叶）：没有抬高往前拉线，分数减半
   if (pattern.needPull && !sim.pulled) factors.pull = 0.5;
   // 图案太小（没倒出多少奶泡）要扣分
   if (coverage < config.scoreMinCoverage) factors.small = coverage / config.scoreMinCoverage;
   for (const f of Object.values(factors)) score *= f;
   // 心形不扣"没收尾"的分（形状分里已经体现），但没拉线时这是最该提醒的
-  if (!sim.pulled && !factors.pull) factors.pull = 0.6;
+  // 没收尾时凹口、心尖都出不来，提示收尾比提示凹口有用
+  if (!sim.pulled && !factors.pull) factors.pull = Math.min(0.6, ...Object.values(factors).map(f => f - 0.01));
   let tip = null, worst = 0.9;
   for (const [k, f] of Object.entries(factors)) if (f < worst) { worst = f; tip = k; }
   if (!tip && score < 70) tip = 'shape';

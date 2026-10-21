@@ -186,7 +186,9 @@ uniform sampler2D uFoam; uniform float showVel; uniform sampler2D uVel;
 void main() {
   vec2 p = vec2(vUv.x, vUv.y);
   float r = length(p - 0.5);
-  if (r > 0.5) { o = vec4(0.13, 0.09, 0.07, 1.0); return; }
+  // 杯口外面透明（游戏里液面画布叠在杯子上），边缘抗锯齿
+  float edgeA = 1.0 - smoothstep(0.5 - texel.x, 0.5, r);
+  if (edgeA <= 0.0) { o = vec4(0.0); return; }
   vec4 f = texture(uFoam, p);
   float h = f.r, t = f.g, m = f.b, c = f.a;
   // 细颗粒：奶泡里的微泡、油脂表面的细斑
@@ -213,7 +215,7 @@ void main() {
   // 杯壁附近暗一点
   col *= 1.0 - 0.25 * smoothstep(0.42, 0.5, r);
   if (showVel > 0.5) col = mix(col, vec3(0.5 + texture(uVel, p).xy * 2.0, 0.5), 0.6);
-  o = vec4(col, 1.0);
+  o = vec4(col * edgeA, edgeA);
 }`,
 };
 
@@ -245,8 +247,8 @@ export const P = {
   nu1: 0.004,        // 奶泡额外的黏度（满厚度时）
   viscIters: 16,
   pressureIters: 40,
-  upArea: 0.075,     // 满流量时每秒浮上来的面积（杯口直径² / 秒）
-  upR: 0.03,         // 浮出点的半径
+  upArea: 0.05,      // 满流量时每秒浮上来的面积（杯口直径² / 秒）
+  upR: 0.04,         // 浮出点的半径
   aheadLow: 0.035,   // 浮出点在落点前方多远（贴近液面时）
   aheadFlow: 0.03,   // 流量越大浮得越远
   jet: 6.0,          // 射流往前推的加速度
@@ -254,10 +256,12 @@ export const P = {
   drag: 12,          // 拉花缸贴着液面时带着液面走的强度
   dragR: 0.03,
   liftJet: 0.8,      // 抬高收尾时的射流（奶柱细，往前推得弱）
+  liftDrag: 30,      // 抬高收尾时奶柱带着液面往前走的强度
+  liftDragR: 0.04,   // 带动的范围（收尾时奶柱又急又冲，带动的宽度有好几毫米）
   sinkArea: 0.05,    // 抬高时奶柱往下吸的面积（每秒）
   sinkR: 0.025,
-  foamRate: 40,
-  foamR: 0.032,
+  foamRate: 100,
+  foamR: 0.04,
   lineRate: 30,
   lineR: 0.008,
   mixRate: 0.8,
@@ -266,15 +270,16 @@ export const P = {
   haloRate: 0.05,
   fusionSec: 0.8,
   wigMin: 0.15,      // 横移速度峰值低于这个不算在摇（一直出白）
-  whiteSlow: 0.75,    // 横移速度不到这一轮峰值的这个比例：冒上来的是奶泡（摆到两端）
-  whiteFast: 0.92,   // 超过这个比例：冒上来的是咖啡（摆到中段，奶柱钻得深）
+  whiteSlow: 0.62,    // 横移速度不到这一轮峰值的这个比例：冒上来的是奶泡（摆到两端）
+  whiteFast: 0.82,   // 超过这个比例：冒上来的是咖啡（摆到中段，奶柱钻得深）
   onsetSec: 0.2,    // 停一下再出奶时，先冒一点咖啡再出白（郁金香片与片之间的线）
   pauseSec: 0.08,
-  upLagSec: 0.12,
+  latTau: 0.05,      // 横移速度的平滑时间（秒）
+  upLagSec: 0.04,   // 浮出点跟着奶柱横移的延迟（太大左右的叶子连成对称的弧，太小两边断开）
   spread: 0.6,       // 浮上来的奶里，有多少是从奶泡底下钻过去、把整片奶泡撑开的
   spreadL: 0.25,     // 撑开的作用随离浮出点的距离衰减
   sharpen: 1.5,       // 分相的强度
-  oneWay: 0,         // 1 = 只在往右摆的中段冒咖啡（一个来回一道线），0 = 两个方向都冒    // 浮出点跟着奶柱横移的延迟：奶先在液面下聚成一团，再浮上来
+  oneWay: 0,        // 1 = 只在往右摆的中段冒咖啡（一个来回一道线），0 = 两个方向都冒
 };
 
 const foamOnNow = sim => (sim.flowTime > P.fusionSec ? 1 : 0);
@@ -353,6 +358,7 @@ export class FluidSim {
 
   // inp: { x, y }：奶柱落点（纹理坐标，y 朝上 = 前方），q：流量 0~1，lift：抬高 0~1
   step(dt, inp) {
+    if (!(dt > 0)) return;
     const fwd = [0, 1];
     const q = inp.q, lift = inp.lift ?? 0;
     this.time += dt;
@@ -361,8 +367,9 @@ export class FluidSim {
     const pv = this.last ? [(inp.x - this.last[0]) / dt, (inp.y - this.last[1]) / dt] : [0, 0];
     this.last = [inp.x, inp.y];
     // 冒上来的是奶泡还是咖啡：看奶柱横移得多快，以及是不是刚重新开始出奶
-    this.latSpeed += (Math.abs(pv[0]) - this.latSpeed) * (1 - Math.exp(-dt / 0.03));
-    this.latVel = (this.latVel ?? 0) + (pv[0] - (this.latVel ?? 0)) * (1 - Math.exp(-dt / 0.03));
+    // 横移速度先平滑一下（触摸、陀螺仪的读数一帧一帧有抖动，不平滑的话白和褐判断会乱跳）
+    this.latVel = (this.latVel ?? 0) + (pv[0] - (this.latVel ?? 0)) * (1 - Math.exp(-dt / P.latTau));
+    this.latSpeed = Math.abs(this.latVel);
     if (q * (1 - lift) > 0.05) {
       if (this.pausedFor > P.pauseSec) this.sinceOnset = 0;
       this.pausedFor = 0;
@@ -373,6 +380,7 @@ export class FluidSim {
     this.latPeak = Math.max(this.latSpeed, this.latPeak * Math.exp(-dt / 1.0));
     const rel = this.latPeak > P.wigMin && (!P.oneWay || this.latVel > 0) ? this.latSpeed / this.latPeak : 0;
     const white = (1 - ss(P.whiteSlow, P.whiteFast, rel)) * ss(0, P.onsetSec, this.sinceOnset);
+    this.debug = { white, rel, latSpeed: this.latSpeed, latPeak: this.latPeak };
     // 奶泡面积（估计）：冒上来的白色部分 + 被撑开的部分；用来把"撑开"的总量分摊到整片奶泡上
     this.foamArea += dt * foamOnNow(this) * q * (1 - lift) * P.upArea;
 
@@ -393,7 +401,7 @@ export class FluidSim {
     this.run('advectVel', this.vel[1], { dt }, { uVel: this.vel[0] }); this.swap(this.vel);
     this.run('forces', this.vel[1], {
       dt, damp: P.damp, jetPos: up, jetDir: fwd, jetAmp: P.jet * q * (1 - lift) + P.liftJet * q * lift, jetR: P.jetR,
-      srcPos: [inp.x, inp.y], pv, dragAmp: P.drag * q * (1 - 0.5 * lift), dragR: P.dragR,
+      srcPos: [inp.x, inp.y], pv, dragAmp: P.drag * q * (1 - lift) + P.liftDrag * q * lift, dragR: P.dragR + (P.liftDragR - P.dragR) * lift,
     }, { uVel: this.vel[0], uFoam: this.foam[0] });
     this.swap(this.vel);
     // 黏性：vel0 存外力之后的速度，迭代求解
@@ -419,6 +427,14 @@ export class FluidSim {
       tintRate: P.tintRate, haloRate: P.haloRate, sharpen: P.sharpen,
     }, { uFoam: this.foam[0] });
     this.swap(this.foam);
+  }
+
+  // 把奶泡场读回 CPU（评分用）：RGBA 浮点，行 0 = 纹理 v=0（拉花缸那侧）
+  readFoam() {
+    const gl = this.gl, N = this.N, out = new Float32Array(N * N * 4);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, this.foam[0].fb);
+    gl.readPixels(0, 0, N, N, gl.RGBA, gl.FLOAT, out);
+    return out;
   }
 
   render(showVel = false) {
