@@ -10,7 +10,7 @@ import { PATTERNS, patternById } from './patterns.js';
 import { renderDemo } from './demos.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
-const BUILD = '1021-r41';
+const BUILD = '1022-r42';
 
 const $ = id => document.getElementById(id);
 applyStatic();
@@ -26,6 +26,20 @@ const debugHud = params.get('debug') === '1';
 const forceTouch = params.get('mode') === 'touch';
 
 const HINTS = { tilt: t('hintTilt'), touch: t('hintTouch') };
+// 操作说明：只在这台设备的前两杯显示，6 秒后或者一碰屏幕就收起，不一直挡着画面
+const HINT_KEY = 'latte-pour.hintShown';
+let hintTimer = 0;
+function showHint(force = false) {
+  let shown = 0;
+  try { shown = Number(localStorage.getItem(HINT_KEY)) || 0; } catch { /* 忽略 */ }
+  if (!force && shown >= 2) { $('hint').hidden = true; return; }
+  try { localStorage.setItem(HINT_KEY, String(shown + 1)); } catch { /* 忽略 */ }
+  $('hint').hidden = false;
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(hideHint, 6000);
+}
+function hideHint() { clearTimeout(hintTimer); $('hint').hidden = true; }
+$('cup').addEventListener('pointerdown', hideHint);
 const FALLBACK_NOTE = { denied: t('fallbackDenied'), unsupported: t('fallbackUnsupported') };
 // 本机最高分（每个图案分开记）
 const bestKey = id => 'latte-pour.best.' + id;
@@ -106,7 +120,7 @@ $('startBtn').addEventListener('click', async () => {
     show('play');
     showTargetBadge();
     $('result').hidden = true;
-    $('hint').hidden = false;
+    showHint();
     $('flipBtn').hidden = !game.isTilt;
     return;
   }
@@ -120,13 +134,14 @@ $('startBtn').addEventListener('click', async () => {
   show('play');
   showTargetBadge();
   $('hint').textContent = (FALLBACK_NOTE[result] || '') + HINTS[mode];
-  $('hint').hidden = false;
+  // 陀螺仪权限被拒、改成手指模式时，这一次一定要告诉玩家
+  showHint(!!FALLBACK_NOTE[result]);
   $('result').hidden = true;
   game = createGame($('cup'), {
     mode,
     pattern,
     debug: debugHud,
-    onStart: () => { $('hint').hidden = true; $('flipBtn').hidden = true; count('pour-start', 'Pour started', true); },
+    onStart: () => { hideHint(); $('flipBtn').hidden = true; count('pour-start', 'Pour started', true); },
     onEnd: r => {
       const v = verdict(r.score, r.overflow);
       let best = getBest(pattern.id);
@@ -198,7 +213,7 @@ $('againBtn').addEventListener('click', () => {
   $('savePanel').hidden = true;
   game.reset();
   $('result').hidden = true;
-  $('hint').hidden = false;
+  showHint();
   $('flipBtn').hidden = !game.isTilt;
 });
 

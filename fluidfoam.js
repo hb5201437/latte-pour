@@ -23,6 +23,8 @@ class FluidFoam {
     const gl = this.canvas.getContext('webgl2', { antialias: false, preserveDrawingBuffer: true, premultipliedAlpha: true });
     if (!gl) throw new Error('没有 WebGL2');
     P.fusionSec = config.fusionSec;
+    // ?fp={"参数":值} 临时覆盖流体参数（调手感用）
+    try { Object.assign(P, JSON.parse(new URLSearchParams(location.search).get('fp') || '{}')); } catch { /* 忽略 */ }
     this.fluid = new FluidSim(gl, quality);
     this.reset();
     if (new URLSearchParams(location.search).get('debug')) globalThis.__foam = this;

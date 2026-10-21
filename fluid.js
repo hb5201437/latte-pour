@@ -23,6 +23,11 @@ in vec2 vUv; out vec4 o;
 uniform vec2 texel;
 float inside(vec2 p) { return step(length(p - 0.5), 0.5 - texel.x); }
 float gauss(vec2 p, vec2 c, float r) { vec2 d = p - c; return exp(-dot(d, d) / (r * r)); }
+// 点到线段（上一帧落点 → 这一帧落点）的距离：奶柱一帧走好几格时，沿整段路径连续作用，不会留下一串点
+float segGauss(vec2 p, vec2 a, vec2 b, float r) {
+  vec2 ab = b - a; float t = clamp(dot(p - a, ab) / max(dot(ab, ab), 1e-8), 0.0, 1.0);
+  vec2 d = p - (a + ab * t); return exp(-dot(d, d) / (r * r));
+}
 `;
 
 const FS = {
@@ -52,11 +57,11 @@ void main() {
   forces: `
 uniform sampler2D uVel, uFoam; uniform float dt, damp;
 uniform vec2 jetPos, jetDir; uniform float jetAmp, jetR;
-uniform vec2 srcPos, pv; uniform float dragAmp, dragR;
+uniform vec2 srcPos, prevPos, pv; uniform float dragAmp, dragR;
 void main() {
   vec2 u = texture(uVel, vUv).xy * exp(-damp * dt);
   u += jetDir * jetAmp * gauss(vUv, jetPos, jetR) * dt;
-  float g = clamp(dragAmp * gauss(vUv, srcPos, dragR) * dt, 0.0, 1.0);
+  float g = clamp(dragAmp * segGauss(vUv, prevPos, srcPos, dragR) * dt, 0.0, 1.0);
   u += (pv - u) * g;
   o = vec4(u * inside(vUv), 0.0, 1.0);
 }`,
@@ -84,7 +89,7 @@ void main() {
   divergence: `
 uniform sampler2D uVel, uFoam;
 uniform vec2 upPos; uniform float upAmp, upR, spreadAmp, spreadL;
-uniform vec2 sinkPos; uniform float sinkAmp, sinkR;
+uniform vec2 sinkPos, sinkPrev; uniform float sinkAmp, sinkR;
 uniform float ringAmp;
 // 图案范围：奶泡，以及冒上来的奶咖色线（混了牛奶的咖啡）
 float patternMask(vec4 f) { return max(smoothstep(0.35, 0.75, f.r), smoothstep(0.3, 0.5, f.b)); }
@@ -93,7 +98,7 @@ void main() {
   float d = 0.5 / texel.x * (texture(uVel, vUv + dx).x - texture(uVel, vUv - dx).x +
                              texture(uVel, vUv + dy).y - texture(uVel, vUv - dy).y);
   float r = length(vUv - 0.5);
-  float src = upAmp * gauss(vUv, upPos, upR) - sinkAmp * gauss(vUv, sinkPos, sinkR)
+  float src = upAmp * gauss(vUv, upPos, upR) - sinkAmp * segGauss(vUv, sinkPrev, sinkPos, sinkR)
             - ringAmp * smoothstep(0.40, 0.49, r)
             // 奶从已有奶泡底下钻过去、把奶泡往上往外撑开：整片奶泡均匀膨胀（咖啡线不膨胀，所以越往外线越细、白带越宽）
             + spreadAmp * patternMask(texture(uFoam, vUv)) * exp(-length(vUv - upPos) / spreadL);
@@ -151,7 +156,7 @@ void main() {
   // 奶泡浮出、抬高后的细线、融合时咖啡变浅、边缘染色
   inject: `
 uniform sampler2D uFoam; uniform float dt;
-uniform vec2 upPos, srcPos; uniform float sharpen; uniform float foamRate, foamR, white, lineRate, lineR, mixRate, mixR, tintRate, haloRate;
+uniform vec2 upPos, srcPos, prevPos; uniform float sharpen, absorbRate, absorbR; uniform float foamRate, foamR, white, lineRate, lineR, mixRate, mixR, tintRate, haloRate;
 void main() {
   vec4 f = texture(uFoam, vUv);
   float h = f.r, t = f.g, m = f.b;
@@ -163,7 +168,9 @@ void main() {
   // 奶泡和咖啡不互溶：厚度往"有"或"没有"两头推，搬运抹出来的中间值不会一直留着
   h += sharpen * dt * h * (1.2 - h) * (h - 0.45);
   h = max(h, 0.0);
-  float l = lineRate * gauss(vUv, srcPos, lineR) * dt;
+  // 抬高的奶柱扎下去，把经过的奶泡吸到下面（切出一道细缝，两边被吸口收拢）
+  h *= 1.0 - min(1.0, absorbRate * segGauss(vUv, prevPos, srcPos, absorbR) * dt);
+  float l = lineRate * segGauss(vUv, prevPos, srcPos, lineR) * dt;
   float addL = l * max(0.0, 0.7 - h);
   t = t * h / max(1e-4, h + addL); h += addL;
   m += mixRate * gauss(vUv, srcPos, mixR) * dt * (1.0 - m);
@@ -256,13 +263,16 @@ export const P = {
   drag: 12,          // 拉花缸贴着液面时带着液面走的强度
   dragR: 0.03,
   liftJet: 0.8,      // 抬高收尾时的射流（奶柱细，往前推得弱）
-  liftDrag: 30,      // 抬高收尾时奶柱带着液面往前走的强度
-  liftDragR: 0.04,   // 带动的范围（收尾时奶柱又急又冲，带动的宽度有好几毫米）
+  dragVmax: 2,       // 拖动的目标速度上限（杯口直径/秒）
+  liftDrag: 20,      // 抬高收尾时奶柱带着液面往前走的强度
+  liftDragR: 0.035,  // 带动的范围（收尾时奶柱又急又冲，带动的宽度有好几毫米）
+  absorb: 40,        // 抬高的奶柱把经过的奶泡吸到下面的速度
+  absorbR: 0.008,
   sinkArea: 0.05,    // 抬高时奶柱往下吸的面积（每秒）
   sinkR: 0.025,
   foamRate: 100,
   foamR: 0.04,
-  lineRate: 30,
+  lineRate: 0,  
   lineR: 0.008,
   mixRate: 0.8,
   mixR: 0.06,
@@ -274,6 +284,8 @@ export const P = {
   whiteFast: 0.82,   // 超过这个比例：冒上来的是咖啡（摆到中段，奶柱钻得深）
   onsetSec: 0.2,    // 停一下再出奶时，先冒一点咖啡再出白（郁金香片与片之间的线）
   pauseSec: 0.08,
+  diveSlow: 0.5,     // 往前移动快过这个（杯口直径/秒），浮上来的奶开始变少
+  diveFast: 1.0,     // 快过这个，奶全部钻到下面去
   latTau: 0.05,      // 横移速度的平滑时间（秒）
   upLagSec: 0.04,   // 浮出点跟着奶柱横移的延迟（太大左右的叶子连成对称的弧，太小两边断开）
   spread: 0.6,       // 浮上来的奶里，有多少是从奶泡底下钻过去、把整片奶泡撑开的
@@ -282,6 +294,7 @@ export const P = {
   oneWay: 0,        // 1 = 只在往右摆的中段冒咖啡（一个来回一道线），0 = 两个方向都冒
 };
 
+const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 const foamOnNow = sim => (sim.flowTime > P.fusionSec ? 1 : 0);
 
 export class FluidSim {
@@ -350,6 +363,7 @@ export class FluidSim {
     this.latSpeed = 0;
     this.latPeak = 0;
     this.upX = null;
+    this.fwdSpeed = 0;
     this.foamArea = 0;
     this.pausedFor = 0;
     this.sinceOnset = 0;
@@ -360,11 +374,13 @@ export class FluidSim {
   step(dt, inp) {
     if (!(dt > 0)) return;
     const fwd = [0, 1];
-    const q = inp.q, lift = inp.lift ?? 0;
+    const q = inp.q;
+    let lift = inp.lift ?? 0;
     this.time += dt;
     if (q > 0) this.flowTime += dt * (0.6 + 0.4 * q);
     const foamOn = this.flowTime > P.fusionSec ? 1 : 0;
     const pv = this.last ? [(inp.x - this.last[0]) / dt, (inp.y - this.last[1]) / dt] : [0, 0];
+    this.prevSrc = this.last || [inp.x, inp.y];
     this.last = [inp.x, inp.y];
     // 冒上来的是奶泡还是咖啡：看奶柱横移得多快，以及是不是刚重新开始出奶
     // 横移速度先平滑一下（触摸、陀螺仪的读数一帧一帧有抖动，不平滑的话白和褐判断会乱跳）
@@ -375,7 +391,6 @@ export class FluidSim {
       this.pausedFor = 0;
       this.sinceOnset += dt;
     } else this.pausedFor += dt;
-    const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
     // 峰值：快速跟上、慢慢回落（大约一个摆动周期）
     this.latPeak = Math.max(this.latSpeed, this.latPeak * Math.exp(-dt / 1.0));
     const rel = this.latPeak > P.wigMin && (!P.oneWay || this.latVel > 0) ? this.latSpeed / this.latPeak : 0;
@@ -384,6 +399,11 @@ export class FluidSim {
     // 奶泡面积（估计）：冒上来的白色部分 + 被撑开的部分；用来把"撑开"的总量分摊到整片奶泡上
     this.foamArea += dt * foamOnNow(this) * q * (1 - lift) * P.upArea;
 
+    // 奶柱快速往前扫的时候，奶来不及浮上来就钻到下面去了（收尾时不会再拖出一道粗白）
+    this.fwdSpeed = (this.fwdSpeed ?? 0) + (Math.max(0, pv[1]) - (this.fwdSpeed ?? 0)) * (1 - Math.exp(-dt / 0.03));
+    const dive = 1 - ss(P.diveSlow, P.diveFast, this.fwdSpeed);
+    // 快速往前扫的奶柱和抬高的一样：浮不出奶泡，只会往下吸、带着液面走（手指模式快速一划和陀螺仪先抬高再推，收尾效果一致）
+    lift = Math.max(lift, 1 - dive);
     const low = q * (1 - lift);          // 贴着液面出奶的量：浮上来的奶泡
     const ahead = P.aheadLow + P.aheadFlow * low;
     // 浮出点：落点前方；横向上慢慢跟着落点走（左右摇时浮出点基本留在中间，冒上来的一道道弧跨过中线）
@@ -393,7 +413,12 @@ export class FluidSim {
     const Q = foamOn * low * P.upArea;
     const upAmp = Q * (1 - P.spread) / (Math.PI * P.upR * P.upR);
     const spreadAmp = this.foamArea > 0.003 ? Q * P.spread / this.foamArea : 0;
-    const sinkAmp = q * lift * P.sinkArea / (Math.PI * P.sinkR * P.sinkR);
+    // 奶柱带着液面走，但液面跟不上太快的奶柱：拖动的目标速度有上限（划得再快也不会把奶泡撕开）
+    const pvLen = Math.hypot(pv[0], pv[1]), cap = Math.min(1, P.dragVmax / Math.max(pvLen, 1e-6));
+    const dragPv = [pv[0] * cap, pv[1] * cap];
+    // 吸口沿这一帧走过的线段分布：面积 ≈ 圆 + 长条
+    const segLen = Math.hypot(inp.x - this.prevSrc[0], inp.y - this.prevSrc[1]);
+    const sinkAmp = q * lift * P.sinkArea / (Math.PI * P.sinkR * P.sinkR + 2 * P.sinkR * Math.sqrt(Math.PI) * segLen);
     // 源和汇的净面积由杯壁附近的一圈往下沉的流补上（环 0.40~0.49 的有效面积约 π(0.49²-0.40²)/2）
     const net = Q * (spreadAmp > 0 ? 1 : 1 - P.spread) - q * lift * P.sinkArea;
     const ringAmp = net / (Math.PI * (0.49 * 0.49 - 0.40 * 0.40) * 0.5);
@@ -401,7 +426,7 @@ export class FluidSim {
     this.run('advectVel', this.vel[1], { dt }, { uVel: this.vel[0] }); this.swap(this.vel);
     this.run('forces', this.vel[1], {
       dt, damp: P.damp, jetPos: up, jetDir: fwd, jetAmp: P.jet * q * (1 - lift) + P.liftJet * q * lift, jetR: P.jetR,
-      srcPos: [inp.x, inp.y], pv, dragAmp: P.drag * q * (1 - lift) + P.liftDrag * q * lift, dragR: P.dragR + (P.liftDragR - P.dragR) * lift,
+      srcPos: [inp.x, inp.y], prevPos: this.prevSrc, pv: dragPv, dragAmp: P.drag * q * (1 - lift) + P.liftDrag * q * lift, dragR: P.dragR + (P.liftDragR - P.dragR) * lift,
     }, { uVel: this.vel[0], uFoam: this.foam[0] });
     this.swap(this.vel);
     // 黏性：vel0 存外力之后的速度，迭代求解
@@ -410,7 +435,7 @@ export class FluidSim {
       this.run('visc', this.vel[1], { dt, nu0: P.nu0, nu1: P.nu1 }, { uVel: this.vel[0], uVel0: this.vel0, uFoam: this.foam[0] });
       this.swap(this.vel);
     }
-    this.run('divergence', this.div, { upPos: up, upAmp, upR: P.upR, spreadAmp, spreadL: P.spreadL, sinkPos: [inp.x, inp.y], sinkAmp, sinkR: P.sinkR, ringAmp }, { uVel: this.vel[0], uFoam: this.foam[0] });
+    this.run('divergence', this.div, { upPos: up, upAmp, upR: P.upR, spreadAmp, spreadL: P.spreadL, sinkPos: [inp.x, inp.y], sinkPrev: this.prevSrc, sinkAmp, sinkR: P.sinkR, ringAmp }, { uVel: this.vel[0], uFoam: this.foam[0] });
     for (let i = 0; i < P.pressureIters; i++) {
       this.run('pressure', this.pres[1], {}, { uP: this.pres[0], uDiv: this.div });
       this.swap(this.pres);
@@ -420,7 +445,8 @@ export class FluidSim {
     this.run('advect', this.hat, { dt }, { uSrc: this.foam[0], uVel: this.vel[0] });
     this.run('maccormack', this.foam[1], { dt }, { uSrc: this.foam[0], uHat: this.hat, uVel: this.vel[0] }); this.swap(this.foam);
     this.run('inject', this.foam[1], {
-      dt, upPos: up, srcPos: [inp.x, inp.y],
+      dt, upPos: up, srcPos: [inp.x, inp.y], prevPos: this.prevSrc,
+      absorbRate: q * lift * P.absorb, absorbR: P.absorbR,
       foamRate: foamOn * low * P.foamRate, foamR: P.foamR, white,
       lineRate: foamOn * q * lift * P.lineRate, lineR: P.lineR,
       mixRate: (1 - foamOn) * q * P.mixRate, mixR: P.mixR,
