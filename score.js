@@ -194,7 +194,7 @@ export function scorePour(sim, pattern) {
   // 树叶要边摆边往后退拉出叶脉：退得不够按比例扣分
   if (pattern.needBack) factors.back = 0.35 + 0.65 * Math.min(1, (sim.backTravel || 0) / (pattern.needBack * sim.n / 2));
   // 一口气倒完的图案（心形）：停下来再推了好几次要扣分
-  if (pattern.maxPieces && sim.pieces > pattern.maxPieces) factors.onePour = 0.5;
+  if (pattern.maxPieces && sim.pieces > pattern.maxPieces) factors.onePour = 0.4;
   // 要求收尾的图案（郁金香、树叶）：没有抬高往前拉线，分数减半
   if (pattern.needPull && !sim.pulled) factors.pull = 0.5;
   // 图案太小（没倒出多少奶泡）要扣分

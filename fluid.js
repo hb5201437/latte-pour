@@ -171,7 +171,8 @@ void main() {
   // 抬高的奶柱扎下去，把经过的奶泡吸到下面（切出一道细缝，两边被吸口收拢）
   h *= 1.0 - min(1.0, absorbRate * segGauss(vUv, prevPos, srcPos, absorbR) * dt);
   float l = lineRate * segGauss(vUv, prevPos, srcPos, lineR) * dt;
-  float addL = l * max(0.0, 0.7 - h);
+  // 奶柱留下的细牛奶线：落在咖啡上看得见（心尖前面那一小截），落在奶泡里就和两边融在一起
+  float addL = l * max(0.0, 0.7 - h) * (1.0 - smoothstep(0.1, 0.4, h));
   t = t * h / max(1e-4, h + addL); h += addL;
   m += mixRate * gauss(vUv, srcPos, mixR) * dt * (1.0 - m);
   // 奶泡底下的牛奶慢慢渗到周围咖啡里：奶泡四周一圈变浅
@@ -264,15 +265,15 @@ export const P = {
   dragR: 0.03,
   liftJet: 0.8,      // 抬高收尾时的射流（奶柱细，往前推得弱）
   dragVmax: 2,       // 拖动的目标速度上限（杯口直径/秒）
-  liftDrag: 20,      // 抬高收尾时奶柱带着液面往前走的强度
-  liftDragR: 0.035,  // 带动的范围（收尾时奶柱又急又冲，带动的宽度有好几毫米）
-  absorb: 40,        // 抬高的奶柱把经过的奶泡吸到下面的速度
+  liftDrag: 30,      // 抬高收尾时奶柱带着液面往前走的强度
+  liftDragR: 0.02,  // 带动的范围（收尾时奶柱又急又冲，带动的宽度有好几毫米）
+  absorb: 0,         // 把经过的奶泡直接吸掉（真实收尾里两边会合拢、不留缝，所以不吸）
   absorbR: 0.008,
-  sinkArea: 0.05,    // 抬高时奶柱往下吸的面积（每秒）
-  sinkR: 0.025,
+  sinkArea: 0.5,     // 抬高时奶柱往下吸的面积（每秒）：两边的奶泡跟着往中间陷、合拢，收尾不留缝
+  sinkR: 0.035,
   foamRate: 100,
   foamR: 0.04,
-  lineRate: 0,  
+  lineRate: 20,  
   lineR: 0.008,
   mixRate: 0.8,
   mixR: 0.06,
