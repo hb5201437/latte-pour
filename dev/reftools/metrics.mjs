@@ -128,6 +128,27 @@ export function analyze(rgb) {
   for (let k = 0; k < G * G; k++) brownMask[k] = sil[k] && cls[k] === 0 ? 1 : 0;
   const near = morph(brownMask, Math.round(0.15 * G / 2), true);
   let plain = 0; for (let k = 0; k < G * G; k++) if (sil[k] && cls[k] === 1 && !near[k]) plain++;
+  // 叶子区（杯子中下部）纹路的走向：真树叶的叶片是斜的，层层叠的弧（千层心、郁金香）在中间是横的。
+  // 用分类图的梯度：梯度朝上下 = 横线，朝左右 = 竖线，其余算斜线；统计三种的比例
+  let lh = 0, ld = 0, lv = 0;
+  const cv = (i, j) => { const k = j * G + i; return cls[k] === 1 ? 1 : cls[k] === 0 ? 0 : null; };
+  for (let j = 2; j < G - 2; j++) for (let i = 2; i < G - 2; i++) {
+    const u = ((i + 0.5) / G) * 2 - 1, v = ((j + 0.5) / G) * 2 - 1;
+    if (Math.abs(u) > 0.45 || v < -0.1 || v > 0.85 || !sil[j * G + i]) continue;
+    const a = cv(i + 2, j), b = cv(i - 2, j), c = cv(i, j + 2), d = cv(i, j - 2);
+    if (a == null || b == null || c == null || d == null) continue;
+    const gx = a - b, gy = c - d;
+    if (!gx && !gy) continue;
+    if (Math.abs(gy) > 2 * Math.abs(gx)) lh++; else if (Math.abs(gx) > 2 * Math.abs(gy)) lv++; else ld++;
+  }
+  const lt = Math.max(1, lh + ld + lv);
+  // 交错还是对称：叶脉左右两侧（u = ±0.12）沿前后方向的白/咖啡序列做相关。左右镜像（层层叠的弧）≈ 1，交错的叶子低甚至为负
+  const prof = u0 => { const out = []; const i = Math.floor((u0 + 1) / 2 * G); for (let j = Math.floor(0.45 * G); j < Math.floor(0.92 * G); j++) { const k = j * G + i; out.push(cls[k] < 0 || !sil[k] ? null : cls[k]); } return out; };
+  const pl = prof(-0.12), pr = prof(0.12);
+  let n2 = 0, sl = 0, sr = 0; for (let t = 0; t < pl.length; t++) if (pl[t] != null && pr[t] != null) { n2++; sl += pl[t]; sr += pr[t]; }
+  let cov = 0, vl = 0, vr = 0; const ml = sl / Math.max(1, n2), mr = sr / Math.max(1, n2);
+  for (let t = 0; t < pl.length; t++) if (pl[t] != null && pr[t] != null) { cov += (pl[t] - ml) * (pr[t] - mr); vl += (pl[t] - ml) ** 2; vr += (pr[t] - mr) ** 2; }
+  const mirror = vl > 0 && vr > 0 ? cov / Math.sqrt(vl * vr) : 1;
   return {
     m: {
       foam: +(white / Math.max(1, known)).toFixed(3),               // 杯面里白色的比例
@@ -141,6 +162,8 @@ export function analyze(rgb) {
       whiteBand: +mean([...vert, ...horiz], x => x.white).toFixed(3),
       brownBand: +mean([...vert, ...horiz], x => x.brown).toFixed(3),
       plain: +(plain / Math.max(1, sArea)).toFixed(3),
+      lineH: +(lh / lt).toFixed(3), lineD: +(ld / lt).toFixed(3),   // 叶子区横线、斜线占的比例
+      mirror: +mirror.toFixed(2),                                     // 叶脉两侧对称程度（1 = 镜像，低 = 交错）
     },
     cls, sil,
   };
@@ -150,7 +173,7 @@ export function analyze(rgb) {
 // 分两组：形状（大小、位置、各高度宽度）和纹路（条纹数、带宽、轮廓里咖啡色比例、大片白）。两组等权，纹路不能被形状盖过去
 const SHAPE = { foam: 0.1, size: 0.1, cx: 0.1, cy: 0.1, top: 0.1, bottom: 0.1, left: 0.1, right: 0.1,
   w_f60: 0.15, w_f30: 0.15, w_0: 0.15, w_b30: 0.15, w_b60: 0.15 };
-const TEXTURE = { inBrown: 0.05, stripesV: 2, stripesH: 2, whiteBand: 0.03, brownBand: 0.02, plain: 0.05 };
+const TEXTURE = { inBrown: 0.05, stripesV: 2, stripesH: 2, whiteBand: 0.03, brownBand: 0.02, plain: 0.05, lineH: 0.06, lineD: 0.06, mirror: 0.15 };
 const SCALE = { ...SHAPE, ...TEXTURE };
 export function compare(a, b) {
   const per = {};

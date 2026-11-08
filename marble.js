@@ -16,6 +16,8 @@ export const P = {
   sink: 0.6,        // 奶柱落点吸走的面积 / 浮上面积（落点后面的液面往奶柱里流，把每一圈的后端收拢、吃掉 → 前面是弧）
   sinkBack: 0.01,   // 吸入点在落点后方多远
   sinkBackMul: 0.4, // 往后退时吸入的倍数（小 = 外圈弧线不跟着落点被拖到底部，轮廓更圆）
+  absorbR: 0,       // 落点旁边沉下去的圆的半径（直径单位）：奶泡在这里被切断，弧线留下钝头（0 = 关）
+  absorbBack: 0.02, // 沉下去的圆心在落点后方多远
   // —— 摇：折叠出褐线 ——
   swing: 0.3,       // 原地摇时奶柱方向最大偏转角（弧度）：小，弧线基本同心
   trans: 0.25,      // 浮出点跟着拉花缸横移的比例（1 = 字面平移；大了左右分成两团）
@@ -33,6 +35,9 @@ export const P = {
   hpTau: 0.3,       // 横移高通的时间常数（秒）：区分"左右摇"和"整体移动"
   pkTau: 0.5,       // 摇动峰值的衰减时间（秒）
   minAmp: 0.012,    // 摇动幅度低于这个（直径单位）当作没摇
+  phaseFold: 0,     // 1 = 按摆动相位出褐（见 phaseColor），不看速度：节奏、幅度变了也稳
+  inW: 0.35,        // phaseFold：原地摇时过中线后出褐的时长（半周期的比例）
+  backW: 0.35,      // phaseFold：往后退时摆到两端出褐的宽度（半周期的比例）
   // —— 抬高拉过 ——
   liftCut: 1,       // 抬高时浮上量减少的比例（1 = 抬高时不再出奶泡）
   sinkLift: 0.08,   // 抬高时奶柱还在吸的面积（每秒）：抬高停顿时落点的奶泡被吸走、露出咖啡面，接着被拉成叶脉
@@ -76,6 +81,7 @@ export class Marble {
     this.pkX = 0; this.pkV = 0;
     this.S = null; this.C = null; this.color = WHITE;
     this.ms = 0; this.frames = 0;
+    this.side = 0; this.sinceX = 9; this.half = 0; this.crossDir = 0;
   }
 
   // 一帧。inp = { x, y（直径单位，杯心原点，+y 前方）, pour: bool, flow, lift, foam: bool }
@@ -102,6 +108,7 @@ export class Marble {
     const C = [S[0] + ah * Math.sin(th), S[1] + ah * Math.cos(th)];
     let color = Math.abs(vx) / this.pkV > p.brownThr && this.pkX > p.minAmp * 1.01 && (p.folds > 1 || vx > 0) ? BROWN : WHITE;
     if (back && p.backEnds) color = Math.abs(xd) / this.pkX > p.backEndThr && this.pkX > p.minAmp * 1.01 ? BROWN : WHITE;
+    if (p.phaseFold) color = this.phaseColor(xd, back, dt);
     if (back && color === BROWN && p.backBrown <= 0) color = WHITE;
     this.S = S; this.C = C; this.color = color;
 
@@ -115,6 +122,9 @@ export class Marble {
       const rs2 = sinkA / Math.PI;
       ops.push({ k: 1, x: S[0], y: S[1] - p.sinkBack, r2: rs2 });
     }
+    // 1b) 落点旁边一小块奶泡直接沉下去（absorbR > 0）：每一圈的后端被切掉、留下钝的断头，
+    //     而不是被吸口拉成一束细线聚到落点（视频里扇形的弧在落点前就断开，不会收成一个尖）
+    if (p.absorbR > 0 && !lift) ops.push({ k: 3, x: S[0], y: S[1] - p.absorbBack, r: p.absorbR });
     // 2) 浮出点滴落
     let addCircle = null;
     if (inp.foam !== false && area > 0) {
@@ -137,6 +147,28 @@ export class Marble {
     this.ms += performance.now() - t0; this.frames++;
   }
 
+  // 按摆动相位决定浮上来的是白还是褐（phaseFold = 1）：只看奶柱什么时候过中线（左右方向），不看摇得多快多大。
+  // 每过一次中线记一次，按两次过中线的间隔估计半个周期；
+  //   原地摇：过中线之后的 inW 个半周期出褐（folds = 1 时只在往右过中线时出，一个来回一条线）
+  //   往后退：摆到两端（半周期的中段）出褐，宽 backW 个半周期
+  // 节奏快慢、幅度大小变了，每一摆还是折出一道干净的线
+  phaseColor(xd, back, dt) {
+    const p = this.p, h = p.minAmp * 0.5;
+    this.side = this.side || 0;
+    const side = xd > h ? 1 : xd < -h ? -1 : this.side;
+    this.sinceX = (this.sinceX ?? 9) + dt;
+    if (side !== this.side) {
+      if (this.side !== 0 && this.sinceX > 0.06) this.half = this.half ? this.half + (Math.min(0.5, this.sinceX) - this.half) * 0.5 : Math.min(0.5, this.sinceX);
+      this.crossDir = side; this.side = side; this.sinceX = 0;
+    }
+    if (!this.half || this.pkX <= p.minAmp * 1.01) return WHITE;
+    const ph = this.sinceX / this.half; // 这一摆走到哪儿了（0 = 刚过中线，1 = 下一次过中线）
+    if (back && p.backEnds) return Math.abs(ph - 0.5) < p.backW / 2 ? BROWN : WHITE;
+    // 往后退、backEnds = 0：奶被甩到两边成白色叶片，每次过中线（不分方向）都夹进一道咖啡面 → 左右交错的叶子
+    if (back) return ph < p.backW ? BROWN : WHITE;
+    return ph < p.inW && (p.folds > 1 || this.crossDir > 0) ? BROWN : WHITE;
+  }
+
   // 把一串变换作用到所有折线；线段被拉长时在原像上细分，太密时删点
   apply(ops) {
     const p = this.p, W = p.wall, W2 = W * W;
@@ -148,6 +180,10 @@ export class Marble {
           if (d2 < 1e-14) { dx = 1e-7; dy = 0; d2 = 1e-14; }
           const s = o.k === 0 ? Math.sqrt(1 + o.r2 / d2) : Math.sqrt(Math.max(0, 1 - o.r2 / d2));
           x = o.x + dx * s; y = o.y + dy * s;
+        } else if (o.k === 3) {
+          // 沉下去：圆内的点推到圆边上（这一段折线贴着圆边，看起来就是被切掉的钝头）
+          const dx = x - o.x, dy = y - o.y, d = Math.hypot(dx, dy);
+          if (d < o.r) { const s = d > 1e-9 ? o.r / d : 1; x = o.x + (d > 1e-9 ? dx : o.r) * (d > 1e-9 ? s : 1); y = o.y + (d > 1e-9 ? dy * s : 0); }
         } else {
           const dx = x - o.x, dy = y - o.y;
           const a = dx * o.ux + dy * o.uy, d = Math.abs(-dx * o.uy + dy * o.ux);

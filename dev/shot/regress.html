@@ -61,6 +61,21 @@ window.runCase = i => {
   return { name, pid, lo, hi, ...r, img: sim.canvas.toDataURL('image/jpeg', 0.8) };
 };
 window.runSegs = (segs, pid) => { const sim = run(segs, null, P[pid]); const r = scorePour(sim, P[pid]); sim.render(); return { ...r, img: sim.canvas.toDataURL('image/png') }; };
+// 逐帧输入（稳健性测试用：节奏不均匀的倒法没法用分段格式表达）。frames: [{ x, y（半径单位，杯心 0，y + = 往后）, flow, lift }]，每帧 1/60 秒
+window.runFrames = (frames, pid, assist, size = 0) => {
+  const p = P[pid], g = assist == null ? null : new Guide(p, N, assist);
+  foam.usePattern(p); Object.assign(FP, window.FPover || {}); foam.reset();
+  const pour = new Pour();
+  frames.forEach((f, i) => {
+    const x = c + f.x * c, y = c + f.y * c;
+    let o = { x, y, flowScale: f.flow ?? 1, lift: f.lift ?? null };
+    if (i === 0) { pour.start(x, y); g?.start(x, y); }
+    if (g) o = g.apply(DT, x, y, o.flowScale, o.lift);
+    foam.step(DT, { ...pour.update(DT, o.x, o.y, o.flowScale, o.lift), ctl: o.ctl ?? 0 });
+  });
+  const rep = g?.report(), r = scorePour(foam, p, rep); foam.render();
+  return { ...r, img: foam.canvas.toDataURL('image/png') };
+};
 window.FP = FP;
 window.PATTERNS_BY_ID = P;
 window.lastD = () => Array.from(foam.d || foam.readback());
