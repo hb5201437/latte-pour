@@ -1,4 +1,4 @@
-// 几何（大理石纹）拉花原型：不解流体方程。
+// 几何（大理石纹）拉花引擎：不解流体方程。游戏里树叶用它（marblefoam.js 包一层），proto/marble.html 可以直接用手指倒。
 // 思路来自 "Mathematical Marbling"（Lu, Jaffer, Jin, Zhao, Mao, IEEE CG&A 2012）：
 // 图案 = 一组闭合折线（每次浮上来的一团奶泡 / 一条被夹住的咖啡面），
 // 每一帧对所有顶点做面积守恒的变换（滴落、吸入、拉线），折线被拉长时自动补点，所以线条永远是清楚的。
@@ -206,17 +206,17 @@ export class Marble {
     return { polys: this.polys.length, verts: v, msPerStep: this.frames ? this.ms / this.frames : 0 };
   }
 
-  // 画到 2D canvas（size × size）。opt.stream = 画出奶柱落点
+  // 画到 2D canvas（size × size）。opt.stream = 画出奶柱落点；opt.bare = 只画液面、铺满画布（量指标用，和摆正的视频帧一致）
   render(ctx, size, opt = {}) {
-    const S = size, R = S * 0.5 * 0.94;   // 杯口半径（像素）
+    const S = size, R = S * 0.5 * (opt.bare ? 1 : 0.94);   // 杯口半径（像素）
     const cx = S / 2, cy = S / 2;
     const k = R * 2;                         // 1 直径单位 = k 像素
     ctx.save();
     ctx.clearRect(0, 0, S, S);
-    // 桌面
-    ctx.fillStyle = '#2a1d17'; ctx.fillRect(0, 0, S, S);
+    // 桌面（opt.transparent：游戏里杯子、桌子另外画，这里圆外留透明）
+    if (!opt.transparent) { ctx.fillStyle = '#2a1d17'; ctx.fillRect(0, 0, S, S); }
     // 杯沿
-    ctx.beginPath(); ctx.arc(cx, cy, R * 1.055, 0, Math.PI * 2); ctx.fillStyle = '#efe8df'; ctx.fill();
+    if (!opt.bare) { ctx.beginPath(); ctx.arc(cx, cy, R * 1.055, 0, Math.PI * 2); ctx.fillStyle = '#efe8df'; ctx.fill(); }
     // 咖啡面：中间偏亮、边缘偏暗的 crema
     const g = ctx.createRadialGradient(cx, cy - R * 0.1, R * 0.05, cx, cy, R);
     g.addColorStop(0, '#a8703f'); g.addColorStop(0.6, '#93592d'); g.addColorStop(0.9, '#7a4522'); g.addColorStop(1, '#5e3418');
@@ -240,7 +240,7 @@ export class Marble {
     // 杯壁内侧阴影
     const sh = ctx.createRadialGradient(cx, cy, R * 0.86, cx, cy, R);
     sh.addColorStop(0, 'rgba(40,20,8,0)'); sh.addColorStop(1, 'rgba(40,20,8,0.35)');
-    ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = sh; ctx.fill();
+    if (!opt.bare) { ctx.beginPath(); ctx.arc(cx, cy, R, 0, Math.PI * 2); ctx.fillStyle = sh; ctx.fill(); }
     if (opt.stream && this.S) {
       ctx.strokeStyle = 'rgba(255,255,255,0.8)'; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.arc(cx + this.S[0] * k, cy - this.S[1] * k, 6, 0, Math.PI * 2); ctx.stroke();
@@ -327,7 +327,7 @@ export function expand(segs, dt = P.dt, p = P) {
 }
 
 // 跑一整段倒法，在指定时间点截图。返回 { final, snaps: [{t, img}], stats, ms }
-export function runPour(segs, params = {}, times = [], size = 512) {
+export function runPour(segs, params = {}, times = [], size = 512, opt = {}) {
   const m = new Marble(params);
   const frames = expand(segs, m.p.dt, m.p);
   const cv = document.createElement('canvas'); cv.width = cv.height = size;
@@ -338,10 +338,10 @@ export function runPour(segs, params = {}, times = [], size = 512) {
   for (const fr of frames) {
     m.step(fr, m.p.dt);
     while (ti < ts.length && fr.t >= ts[ti] - 1e-6) {
-      m.render(ctx, size); snaps.push({ t: ts[ti], img: cv.toDataURL('image/png'), stats: m.stats() }); ti++;
+      m.render(ctx, size, opt); snaps.push({ t: ts[ti], img: cv.toDataURL('image/png'), stats: m.stats() }); ti++;
     }
   }
   const simMs = performance.now() - t0;
-  const r0 = performance.now(); m.render(ctx, size); const renderMs = performance.now() - r0;
+  const r0 = performance.now(); m.render(ctx, size, opt); const renderMs = performance.now() - r0;
   return { final: cv.toDataURL('image/png'), snaps, stats: { ...m.stats(), frames: frames.length, simMs, renderMs } };
 }

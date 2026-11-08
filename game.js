@@ -33,8 +33,9 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   // GPU 奶泡分三层叠：底层 2D（桌子、杯身、内壁）、中层液面（WebGL 画布直接显示，
   // 不复制进 2D 画布，每帧省掉一次跨画布同步）、顶层 2D（光泽、杯沿、拉花缸）
   let top = null, topCtx = null;
+  sim.usePattern?.(pattern);
   if (sim.isFluid) {
-    const el = sim.canvas;
+    const el = sim.el || sim.canvas;
     el.style.cssText = 'position:fixed;left:0;top:0;pointer-events:none;transform-origin:0 0';
     top = document.createElement('canvas');
     top.style.cssText = 'position:fixed;inset:0;pointer-events:none';
@@ -367,7 +368,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     if (sim.isFluid) {
       ctx.restore();
       // 中层：WebGL 画布按液面椭圆摆好位置（杯口外面着色器里已经是透明的）
-      const el = sim.canvas;
+      const el = sim.el || sim.canvas;
       el.style.width = el.style.height = 2 * R + 'px';
       el.style.transform = `translate(${cx - R + shX}px, ${cy - R * sqL + shY}px) scale(1, ${sqL})`;
       sim.render();
@@ -505,11 +506,11 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     // 调试用：当前倒奶状态
     prof: () => ({ fps: +fps.toFixed(1), frameMs: +frameMs.toFixed(2), update: +prof.update.toFixed(2), draw: +prof.draw.toFixed(2) }),
     debugState: () => ({ state, step: guide.step?.id, assist, x: +p.x.toFixed(1), y: +p.y.toFixed(1), q: Math.round(pour.q), lift: +(pour.lift || 0).toFixed(2), piece: pour.piece, poured: +poured.toFixed(2), paused: touchPausedFor, tilt: hud && +hud.tilt.toFixed(1), flow: hud && +(hud.flow || 0).toFixed(2), base: tiltIn && +tiltIn.basePitch.toFixed(1), milk: +pit.milk.toFixed(2) }),
-    setPattern(p) { pattern = p; guide = new Guide(pattern, n, assist); },
+    setPattern(p) { pattern = p; guide = new Guide(pattern, n, assist); sim.usePattern?.(pattern); sim.reset(); },
     // 辅助强度（0 = 完全按标准动作，1 = 完全按玩家），下一杯生效
     setAssist(a) { assist = a; guide = new Guide(pattern, n, assist); },
     get assist() { return assist; },
-    foamCanvas: sim.isFluid ? sim.canvas : off, // 最后一帧渲染好的奶泡，保存图片用
+    get foamCanvas() { return sim.isFluid ? sim.canvas : off; }, // 最后一帧渲染好的奶泡，保存图片用
     reset() {
       sim.reset();
       elapsed = 0;

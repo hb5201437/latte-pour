@@ -55,7 +55,7 @@ window.CASES = CASES.map(([name, , pid, lo, hi]) => ({ name, pid, lo, hi }));
 window.runCase = i => {
   const [name, segs, pid, lo, hi] = CASES[i];
   // 有目标图案引导的图案：和游戏里一样经过 guide.js，assist 1 = 动作完全按倒法，只加引导力
-  const sim = run(segs, P[pid].fluid?.target ? new Guide(P[pid], N, 1) : null, P[pid]);
+  const sim = run(segs, P[pid].fluid?.target && P[pid].engine !== 'marble' ? new Guide(P[pid], N, 1) : null, P[pid]);
   const r = scorePour(sim, P[pid]);
   sim.render();
   return { name, pid, lo, hi, ...r, img: sim.canvas.toDataURL('image/jpeg', 0.8) };
@@ -66,6 +66,7 @@ window.PATTERNS_BY_ID = P;
 window.lastD = () => Array.from(foam.d || foam.readback());
 // 跑某个图案的示范倒法，返回奶泡覆盖度（n×n，y 朝下）
 // 有目标图案引导的图案（fluid.target），按引导后的样子量（assist 0 = 标准倒法，引导强度满）
-window.demoMask = id => { const p = P[id]; const sim = run(p.fluid?.demo || p.demo, p.fluid?.target ? new Guide(p, N, 0) : null, p); return Array.from(sim.readback()); };
+// 几何引擎（engine: 'marble'）的图案按原始示范倒法量（不经过引导，那样最接近标准）
+window.demoMask = id => { const p = P[id]; const sim = run(p.fluid?.demo || p.demo, p.fluid?.target && p.engine !== 'marble' ? new Guide(p, N, 0) : null, p); return Array.from(sim.readback()); };
 window.ready = true;
 </script>

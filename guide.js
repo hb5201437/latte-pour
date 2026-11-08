@@ -146,6 +146,8 @@ export class Guide {
         const off = p.u - this.centerU();
         dth += 6 * Math.sin(Math.atan2(off * w, this.du) - this.theta);
       }
+      // 节奏保持均匀：相位跟手，但速度不超出标准节奏的 ±25%（玩家摇得比标准快很多时锁不住，相位会乱跳，几何引擎折出来的纹路就乱了）
+      dth = Math.min(1.25 * w, Math.max(0.8 * w, dth));
       this.theta += dth * dt;
       const su = this.amp * Math.sin(this.theta);
       u = su + (p.u - su) * A;
@@ -176,11 +178,17 @@ export class Guide {
     if (id === 'pull') return;
     if ((raw.lift ?? 0) > 0.5) { go('pull'); return; }
     if (id === 'fusion') { if (!raw.fusion) this.enter(this.k + 1); return; }
-    const moving = this.vb > 0.12 && flowScale > 0.05, still = Math.abs(this.vbFast) < 0.06;
+    // 用平滑得少的速度判断，往后退一开始就能认出来（几何引擎对"什么时候开始退"很敏感）
+    const moving = this.vbFast > 0.12 && flowScale > 0.05, still = Math.abs(this.vbFast) < 0.06;
     this.moveFor = moving ? this.moveFor + dt : 0;
     this.stillFor = still ? this.stillFor + dt : 0;
     const m = this.meas[this.k];
-    if ((id === 'grow' || id === 'wiggle') && ids.includes('back') && this.moveFor > 0.15 && this.last.v - m.v0 > 0.04) go('back');
+    if ((id === 'grow' || id === 'wiggle') && ids.includes('back') && this.moveFor > 0.08 && this.last.v - m.v0 > 0.02) {
+      // 玩家已经退了 moveFor 秒才认出来：标准动作也从这一刻接着往后退，不从头开始（否则标准的后退总比玩家晚、退得短）
+      const late = this.moveFor;
+      go('back');
+      this.tau = late;
+    }
     else if (id === 'back' && ids.includes('dot') && this.stillFor > 0.08 && this.last.v - m.v0 > 0.1) go('dot');
   }
 

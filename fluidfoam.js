@@ -3,6 +3,7 @@
 import { config } from './config.js';
 import { FluidSim, P } from './fluid.js';
 import { FoamSim } from './sim.js';
+import { MarbleFoam } from './marblefoam.js';
 
 const smoothstep = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
 
@@ -11,7 +12,7 @@ export function createFoam(n, quality = 512) {
   if (typeof location !== 'undefined' && new URLSearchParams(location.search).get('engine') === 'old') return new FoamSim(n);
   const q = typeof location !== 'undefined' && Number(new URLSearchParams(location.search).get('q'));
   if (q) quality = q;
-  try { return new FluidFoam(n, quality); } catch (e) { console.warn('GPU 奶泡不可用，改用旧模型：', e.message); return new FoamSim(n); }
+  try { return new SwitchFoam(new FluidFoam(n, quality), n); } catch (e) { console.warn('GPU 奶泡不可用，改用旧模型：', e.message); return new FoamSim(n); }
 }
 
 class FluidFoam {
@@ -92,4 +93,43 @@ class FluidFoam {
     this.white = white;
     return d;
   }
+}
+
+// 按图案切换引擎：patterns.js 里 engine: 'marble' 的图案用几何（大理石纹）引擎，其余用 GPU 流体。
+// 对外的接口和单个引擎一样；el 是放进页面的元素（两个引擎的画布叠在里面，只显示当前这个）
+class SwitchFoam {
+  constructor(fluid, n) {
+    this.fluid = fluid;
+    this.n = n;
+    this.isFluid = true;
+    this.cur = fluid;
+    this.el = document.createElement('div');
+    this.el.appendChild(fluid.canvas);
+    fluid.canvas.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%';
+  }
+  get canvas() { return this.cur.canvas; }
+  usePattern(pattern) {
+    if (pattern?.engine === 'marble') {
+      if (!this.marble) {
+        this.marble = new MarbleFoam(this.n, this.fluid.canvas.width);
+        this.marble.canvas.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:100%';
+        this.el.appendChild(this.marble.canvas);
+      }
+      this.cur = this.marble;
+    } else this.cur = this.fluid;
+    this.cur.usePattern(pattern);
+    this.fluid.canvas.style.display = this.cur === this.fluid ? '' : 'none';
+    if (this.marble) this.marble.canvas.style.display = this.cur === this.marble ? '' : 'none';
+  }
+  reset() { this.cur.reset(); }
+  surface() { return this.cur.surface(); }
+  step(dt, src) { this.cur.step(dt, src); }
+  render() { this.cur.render(); }
+  readback() { return this.cur.readback(); }
+  get d() { return this.cur.d; }
+  get white() { return this.cur.white; }
+  get pulled() { return this.cur.pulled; }
+  get backTravel() { return this.cur.backTravel; }
+  get pieces() { return this.cur.pieces; }
+  get vol() { return this.cur.vol; }
 }
