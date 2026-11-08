@@ -67,6 +67,10 @@ python3 dev/serve.py . 5180
 | `node dev/shot/sweep.mjs 0,1,10 '[{参数},{参数}]'` | 同几个用例，不同参数各跑一遍，拼图对比 |
 | `node dev/shot/seq.mjs rosetta '[1.5,2.5,3.5]'` | 看一个图案一步步长出来的过程 |
 | `node dev/shot/demo1.mjs rosetta out.png` | 跑一个示范，存原尺寸图 |
+| `node dev/reftools/rectify.mjs <视频> dev/ref/keys/rosetta.json dev/ref/keys` | 把参考视频的关键帧摆正成正上方的圆（椭圆参数手标在 json 里，输出 `-check.png` 检查标得准不准）。全部放 dev/ref/，不提交 |
+| `node dev/reftools/metrics.mjs ref.png sim.png ...` | 定量指标：白色比例、图案大小、轮廓、各高度宽度、条纹数、白带/咖啡带宽度；`--overlay` 出轮廓叠图 |
+| `node dev/shot/keyframes.mjs rosetta 0.4 '[{参数}]'` | **判断像不像用这个**：标准倒法在四个关键帧（原地摇完、退到一半、收尾前、成品）和参考视频比指标，打印差距分和轮廓重合度，出对照图 |
+| `node dev/shot/search.mjs rosetta 50` | 按上面的分数自动搜流体参数（随机 + 细搜），结果写 dev/shot/out/search.json |
 | `node dev/reftools/track-pitcher.mjs <视频> <开始秒> <时长> <crop> <行> <x范围>` | 从参考视频逐帧量拉花缸左边缘（摆动频率、幅度、前后移动）。参考视频是第三方教程录屏，有冻结画面，量之前先查冻结段 |
 | `dev/shot/update-templates.sh` | **改了流体物理后必须跑**：按示范重新量 GPU 模板，写回 patterns.js |
 | `node dev/shot/game-smooth.mjs` | 在游戏里用平滑的模拟手指真倒一次树叶（比 game.mjs 的鼠标更接近真手机）。`ASSIST=0.4` 指定辅助强度，`PATTERN=heart` 倒心形 |
