@@ -1,3 +1,9 @@
 .DS_Store
 latte_pour_build_brief.md
-dev/
+# 开发工具提交进仓库，但这些不提交：参考视频帧（用户自己的视频，仓库是公开的）、截图输出、依赖
+dev/ref/
+dev/shot/out/
+dev/shot/node_modules/
+dev/bench/
+dev/*.png
+dev/*.jpg

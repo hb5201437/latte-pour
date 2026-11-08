@@ -1,0 +1,31 @@
+// 用页面里按帧驱动的平滑手指倒树叶（更接近真手机的触摸事件）。用法：node dev/shot/game-smooth.mjs [out.png] [摆幅px] [频率Hz]
+import { chromium } from 'playwright-core';
+const out = process.argv[2] || 'dev/shot/game-smooth.png', amp = Number(process.argv[3] || 22), hz = Number(process.argv[4] || 4);
+const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'] });
+const page = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
+page.on('pageerror', e => console.log('pageerror:', e.message));
+await page.goto('http://127.0.0.1:5180/index.html?mode=touch&lang=en&debug=1' + (process.env.FP ? '&fp=' + encodeURIComponent(process.env.FP) : ''));
+await page.evaluate(() => { localStorage.clear(); localStorage.setItem('latte-pour.pattern', 'rosetta'); localStorage.setItem('latte-pour.hintShown', '9'); });
+await page.reload();
+await page.click('#startBtn');
+await page.waitForTimeout(800);
+const score = await page.evaluate(async ({ amp, hz }) => {
+  const cv = document.getElementById('cup'), r = cv.getBoundingClientRect();
+  const x0 = r.left + r.width / 2, y0 = r.top + r.height * 0.5;
+  const ev = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, { pointerId: 4, clientX: x, clientY: y, bubbles: true, pointerType: 'touch' }));
+  ev('pointerdown', x0, y0);
+  const t0 = performance.now();
+  let y = y0;
+  await new Promise(done => { const f = () => { const t = (performance.now() - t0) / 1000;
+    let x = x0;
+    if (t > 0.9 && t < 4.6) x = x0 + Math.sin(t * hz * 2 * Math.PI) * amp;
+    if (t >= 3.3 && t < 4.6) y = y0 + (t - 3.3) / 1.3 * 80;
+    if (t >= 4.9) y = y0 + 80 - (t - 4.9) / 0.25 * 260;
+    ev('pointermove', x, y);
+    if (t < 5.15) requestAnimationFrame(f); else { ev('pointerup', x, y); done(); } }; requestAnimationFrame(f); });
+  await new Promise(r => setTimeout(r, 2500));
+  return document.getElementById('scoreNum').textContent;
+}, { amp, hz });
+console.log('score', score);
+await page.screenshot({ path: out });
+await b.close();

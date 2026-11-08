@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8"><title>fluid regress</title>
+<body style="background:#222">
+<script type="module">
+import { createFoam } from '../../fluidfoam.js';
+import { P as FP } from '../../fluid.js';
+import { Pour } from '../../pour.js';
+import { scorePour } from '../../score.js';
+import { PATTERNS } from '../../patterns.js';
+import { CASES } from '../regress.mjs';
+const P = Object.fromEntries(PATTERNS.map(p => [p.id, p]));
+const N = 256, DT = 1 / 60, c = N / 2;
+const foam = createFoam(N, Number(new URLSearchParams(location.search).get('q')) || 512);
+// 和 dev/regress.mjs 的 run() 一样展开倒法，但走 GPU 奶泡
+function run(segs) {
+  foam.reset();
+  const pour = new Pour();
+  let started = false, tt = 0;
+  for (const sg of segs) for (let t = 0; t < sg.t; t += DT) {
+    const f = t / sg.t, y = c + (sg.y0 + (sg.y1 - sg.y0) * f) * c;
+    const x = c + Math.sin(tt * (sg.hz || 0) * 2 * Math.PI) * (sg.wig || 0) * c;
+    if (!started) { pour.start(x, y); started = true; }
+    foam.step(DT, pour.update(DT, x, y, sg.flow ?? 1, sg.lift ?? null));
+    tt += DT;
+  }
+  return foam;
+}
+// 示范倒法（以及去掉收尾的示范）换成 GPU 奶泡自己的那一套
+for (const c of CASES) {
+  for (const p of PATTERNS) {
+    if (!p.fluid?.demo) continue;
+    if (c[1] === p.demo) c[1] = p.fluid.demo;
+    else if (c[1][0] === p.demo[0] && c[1].length === p.demo.length - 2) c[1] = p.fluid.demo.slice(0, -2);
+  }
+}
+window.CASES = CASES.map(([name, , pid, lo, hi]) => ({ name, pid, lo, hi }));
+window.runCase = i => {
+  const [name, segs, pid, lo, hi] = CASES[i];
+  const sim = run(segs);
+  const r = scorePour(sim, P[pid]);
+  sim.render();
+  return { name, pid, lo, hi, ...r, img: sim.canvas.toDataURL('image/jpeg', 0.8) };
+};
+window.runSegs = (segs, pid) => { const sim = run(segs); const r = scorePour(sim, P[pid]); sim.render(); return { ...r, img: sim.canvas.toDataURL('image/png') }; };
+window.FP = FP;
+window.PATTERNS_BY_ID = P;
+window.lastD = () => Array.from(foam.d || foam.readback());
+// 跑某个图案的示范倒法，返回奶泡覆盖度（n×n，y 朝下）
+window.demoMask = id => { const sim = run(P[id].fluid?.demo || P[id].demo); return Array.from(sim.readback()); };
+window.ready = true;
+</script>
