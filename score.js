@@ -107,7 +107,17 @@ function inside(poly, x, y) {
 
 // sim：FoamSim；pattern：patterns.js 里的图案。返回 { score: 0~100, tier, tip, iou, coverage, layers }
 // tip：扣分最多的那一项（pull / back / pieces / layers / notch / small / shape），没有明显问题时为 null
-export function scorePour(sim, pattern) {
+// steps：引导式模拟量出的每一步偏差（guide.js 的 report()）。有的话总分主要看步骤，轮廓重合度作补充
+export function scorePour(sim, pattern, steps = null) {
+  const r = scoreShape(sim, pattern);
+  if (!steps || r.score === 0 && r.coverage < 0.01) return r;
+  const score = Math.round(config.scoreStepWeight * steps.score + (1 - config.scoreStepWeight) * r.score);
+  const tier = score >= config.scoreGood ? TIERS[2] : score >= config.scoreOk ? TIERS[1] : TIERS[0];
+  // 步骤都做对了、总分又不低时，不再拿轮廓的问题去提醒（引导后的形状本来就接近标准）
+  return { ...r, shapeScore: r.score, stepScore: steps.score, steps: steps.steps, score, tier, tip: steps.tip || (score < 70 ? r.tip : null) };
+}
+
+function scoreShape(sim, pattern) {
   if (sim.isFluid && !sim.d) sim.readback();
   // GPU 真流体用自己的模板和分数区间
   if (sim.isFluid && pattern.fluid) pattern = { ...pattern, iouZero: undefined, iouFull: undefined, ...pattern.fluid, id: pattern.id + ':fluid' };

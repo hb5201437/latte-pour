@@ -6,24 +6,43 @@ import { P as FP } from '../../fluid.js';
 import { Pour } from '../../pour.js';
 import { scorePour } from '../../score.js';
 import { PATTERNS } from '../../patterns.js';
-import { CASES } from '../regress.mjs';
+import { CASES, GUIDED } from '../regress.mjs';
+import { Guide } from '../../guide.js';
 const P = Object.fromEntries(PATTERNS.map(p => [p.id, p]));
 const N = 256, DT = 1 / 60, c = N / 2;
 const foam = createFoam(N, Number(new URLSearchParams(location.search).get('q')) || 512);
 // 和 dev/regress.mjs 的 run() 一样展开倒法，但走 GPU 奶泡
-function run(segs) {
+// guide：引导式模拟（guide.js），倒法当成玩家的输入，经过引导再送进物理
+function run(segs, guide = null, pattern = null) {
+  foam.usePattern(pattern);
+  Object.assign(FP, window.FPover || {}); // 对比脚本临时覆盖的参数（在图案专用参数之上）
   foam.reset();
   const pour = new Pour();
   let started = false, tt = 0;
   for (const sg of segs) for (let t = 0; t < sg.t; t += DT) {
     const f = t / sg.t, y = c + (sg.y0 + (sg.y1 - sg.y0) * f) * c;
     const x = c + Math.sin(tt * (sg.hz || 0) * 2 * Math.PI) * (sg.wig || 0) * c;
-    if (!started) { pour.start(x, y); started = true; }
-    foam.step(DT, pour.update(DT, x, y, sg.flow ?? 1, sg.lift ?? null));
+    let o = { x, y, flowScale: sg.flow ?? 1, lift: sg.lift ?? null };
+    if (!started) { pour.start(x, y); guide?.start(x, y); started = true; }
+    if (guide) o = guide.apply(DT, x, y, o.flowScale, o.lift);
+    foam.step(DT, { ...pour.update(DT, o.x, o.y, o.flowScale, o.lift), ctl: o.ctl ?? 0 });
     tt += DT;
   }
   return foam;
 }
+// 引导用例：[名称, 倒法, 图案, assist, 最低分, 最高分, 期望提示（可选，前缀匹配）]
+const GCASES = GUIDED.map(g => { const s = g[1]; const p = P[g[2]]; return [g[0], s === p.demo ? p.fluid.demo : s, ...g.slice(2)]; });
+window.GUIDED = GCASES.map(([name, , pid, assist, lo, hi, tip]) => ({ name, pid, assist, lo, hi, tip }));
+window.runGuided = i => {
+  const [name, segs, pid, assist, lo, hi, tip] = GCASES[i];
+  const g = new Guide(P[pid], N, assist);
+  const sim = run(segs, g, P[pid]);
+  const rep = g.report();
+  const r = scorePour(sim, P[pid], rep);
+  sim.render();
+  return { name, pid, assist, lo, hi, wantTip: tip, ...r, img: sim.canvas.toDataURL('image/jpeg', 0.8) };
+};
+window.runGuidedSegs = (segs, pid, assist) => { const g = new Guide(P[pid], N, assist); const sim = run(segs, g, P[pid]); const rep = g.report(); const r = scorePour(sim, P[pid], rep); sim.render(); return { ...r, meas: g.meas, img: sim.canvas.toDataURL('image/png') }; };
 // 示范倒法（以及去掉收尾的示范）换成 GPU 奶泡自己的那一套
 for (const c of CASES) {
   for (const p of PATTERNS) {
@@ -35,16 +54,18 @@ for (const c of CASES) {
 window.CASES = CASES.map(([name, , pid, lo, hi]) => ({ name, pid, lo, hi }));
 window.runCase = i => {
   const [name, segs, pid, lo, hi] = CASES[i];
-  const sim = run(segs);
+  // 有目标图案引导的图案：和游戏里一样经过 guide.js，assist 1 = 动作完全按倒法，只加引导力
+  const sim = run(segs, P[pid].fluid?.target ? new Guide(P[pid], N, 1) : null, P[pid]);
   const r = scorePour(sim, P[pid]);
   sim.render();
   return { name, pid, lo, hi, ...r, img: sim.canvas.toDataURL('image/jpeg', 0.8) };
 };
-window.runSegs = (segs, pid) => { const sim = run(segs); const r = scorePour(sim, P[pid]); sim.render(); return { ...r, img: sim.canvas.toDataURL('image/png') }; };
+window.runSegs = (segs, pid) => { const sim = run(segs, null, P[pid]); const r = scorePour(sim, P[pid]); sim.render(); return { ...r, img: sim.canvas.toDataURL('image/png') }; };
 window.FP = FP;
 window.PATTERNS_BY_ID = P;
 window.lastD = () => Array.from(foam.d || foam.readback());
 // 跑某个图案的示范倒法，返回奶泡覆盖度（n×n，y 朝下）
-window.demoMask = id => { const sim = run(P[id].fluid?.demo || P[id].demo); return Array.from(sim.readback()); };
+// 有目标图案引导的图案（fluid.target），按引导后的样子量（assist 0 = 标准倒法，引导强度满）
+window.demoMask = id => { const p = P[id]; const sim = run(p.fluid?.demo || p.demo, p.fluid?.target ? new Guide(p, N, 0) : null, p); return Array.from(sim.readback()); };
 window.ready = true;
 </script>

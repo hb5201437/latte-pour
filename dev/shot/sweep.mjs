@@ -14,7 +14,7 @@ const base = await page.evaluate(() => ({ ...window.FP }));
 const imgs = [];
 for (const set of sets) {
   for (const i of idx) {
-    const r = await page.evaluate(({ i, set, base }) => { Object.assign(window.FP, base, set); return window.runCase(i); }, { i, set, base });
+    const r = await page.evaluate(({ i, set, base }) => { window.FPover = set; return window.runCase(i); }, { i, set, base });
     imgs.push({ img: r.img, label: `${JSON.stringify(set)} ${r.name} ${r.score}` });
   }
 }

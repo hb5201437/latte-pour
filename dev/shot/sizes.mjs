@@ -10,7 +10,7 @@ const base = await page.evaluate(() => ({ ...window.FP }));
 const imgs = [];
 for (const s of sets) {
   const r = await page.evaluate(({ s, base }) => {
-    Object.assign(window.FP, base, s.fp || {});
+    window.FPover = s.fp || {};
     const f = s.flow;
     const segs = [{ t: 0.9, y0: 0.4, y1: 0.4, flow: f }, { t: s.t || 3.4, y0: 0.4, y1: 0.4, flow: f }, { t: 0.15, y0: 0.4, y1: 0.4, lift: 1 }, { t: 0.3, y0: 0.4, y1: -0.8, lift: 1 }];
     const res = window.runSegs(segs, 'heart');

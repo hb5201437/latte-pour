@@ -8,7 +8,7 @@ page.on('pageerror', e => console.log('pageerror:', e.message));
 await page.goto('http://127.0.0.1:5180/dev/shot/regress.html?q=' + (process.env.Q || 512));
 await page.waitForFunction(() => window.ready);
 const r = await page.evaluate(({ id, over }) => {
-  Object.assign(window.FP, JSON.parse(over));
+  window.FPover = JSON.parse(over);
   const P = window.PATTERNS_BY_ID[id];
   return window.runSegs(P.fluid?.demo || P.demo, id);
 }, { id, over });

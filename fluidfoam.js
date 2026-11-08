@@ -28,9 +28,13 @@ class FluidFoam {
     // 奶泡层用两倍细的网格（?m= 可以改，调试用）
     const m = Number(new URLSearchParams(location.search).get('m')) || quality * 2;
     this.fluid = new FluidSim(gl, quality, Math.min(m, gl.getParameter(gl.MAX_TEXTURE_SIZE)));
+    this.baseP = { ...P }; // 每个图案可以覆盖几项参数（patterns.js 的 fluid.fp），换图案时从这里恢复
     this.reset();
     if (new URLSearchParams(location.search).get('debug')) globalThis.__foam = this;
   }
+
+  // 换成某个图案专用的流体参数（patterns.js 的 fluid.fp），没有就恢复默认
+  usePattern(pattern) { Object.keys(P).forEach(k => { P[k] = this.baseP[k]; }); Object.assign(P, pattern?.fluid?.fp || {}); }
 
   reset() {
     this.fluid.reset();
@@ -66,7 +70,7 @@ class FluidFoam {
     // pour.js 抬高时把流量降到很小（奶柱变细），流体模型里抬高后的吸力、细线看的是"有没有奶柱"，
     // 所以把抬高降掉的那部分流量还原回来
     const q = Math.min(1, src.q / config.flowMax / Math.max(config.flowMinFrac, 1 - lift));
-    this.fluid.step(dt, { x: src.x / this.n, y: 1 - src.y / this.n, q, lift });
+    this.fluid.step(dt, { x: src.x / this.n, y: 1 - src.y / this.n, q, lift, ctl: src.ctl ?? 0 });
     this.d = null;
   }
 

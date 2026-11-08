@@ -7,3 +7,4 @@ dev/shot/node_modules/
 dev/bench/
 dev/*.png
 dev/*.jpg
+dev/shot/*.png

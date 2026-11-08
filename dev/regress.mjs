@@ -56,6 +56,29 @@ export const CASES = [
   ['郁金香放到心形关', P.tulip.demo, 'heart', 0, 30],
 ];
 
+// 引导式模拟（guide.js，只在 GPU 回归里跑）：倒法当成玩家输入，经过引导再进物理。
+// [名称, 倒法, 图案, assist, 最低分, 最高分, 期望提示（包含这段文字即可，可省）]
+const heartIn = (t, extra = {}) => [{ t: 0.9, y0: 0.4, y1: 0.4 }, { t, y0: 0.4, y1: 0.4, ...extra }, ...pull(0.4)];
+const leafIn = ({ wig = 0.14, hz = 3, inPlace = 2.1, back = 0.6, backT = 1.5, entry = 0.05 } = {}) => [
+  { t: 0.9, y0: entry, y1: entry }, { t: inPlace, y0: entry, y1: entry, wig, hz },
+  { t: backT, y0: entry, y1: entry + back, wig, hz }, { t: 0.3, y0: entry + back, y1: entry + back }, ...pull(entry + back)];
+export const GUIDED = [
+  ['心·示范 a0', P.heart.demo, 'heart', 0, 85, 100],
+  ['心·示范 a0.4', P.heart.demo, 'heart', 0.4, 85, 100],
+  ['心·大白心 a0.4', heartIn(3.0), 'heart', 0.4, 80, 100],
+  ['心·乱晃 a0', heartIn(3.0, { wig: 0.2, hz: 2 }), 'heart', 0, 0, 65, 'step_grow_wild'],
+  ['心·乱晃 a0.4', heartIn(3.0, { wig: 0.2, hz: 2 }), 'heart', 0.4, 0, 65, 'step_grow_wild'],
+  ['心·倒太少 a0.4', heartIn(1.0), 'heart', 0.4, 0, 65, 'step_grow_short'],
+  ['心·没收尾 a0.4', heartIn(3.0).slice(0, -2), 'heart', 0.4, 0, 45, 'pull'],
+  ['叶·示范 a0', P.rosetta.demo, 'rosetta', 0, 85, 100],
+  ['叶·示范 a0.4', P.rosetta.demo, 'rosetta', 0.4, 85, 100],
+  ['叶·摇太小 a0.4', leafIn({ wig: 0.05 }), 'rosetta', 0.4, 0, 70, '_small'],
+  ['叶·摇太慢 a0.4', leafIn({ hz: 1.2 }), 'rosetta', 0.4, 0, 75, 'step_'],
+  ['叶·退太少 a0.4', leafIn({ back: 0.2, backT: 0.7 }), 'rosetta', 0.4, 0, 75, 'step_back_short'],
+  ['叶·不往后退 a0.4', [{ t: 0.9, y0: 0.05, y1: 0.05 }, { t: 3.8, y0: 0.05, y1: 0.05, wig: 0.14, hz: 4 }, ...pull(0.05)], 'rosetta', 0.4, 0, 60, 'step_back_missing'],
+  ['叶·没收尾 a0.4', leafIn().slice(0, -2), 'rosetta', 0.4, 0, 45, 'pull'],
+];
+
 export function check(extra = []) {
   let fail = 0;
   const rows = [];

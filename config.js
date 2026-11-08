@@ -91,6 +91,13 @@ export const config = {
   scorePieceMinCells: 120, // 一片至少要有这么多格（256×256 网格）才算"看得见"
   scoreOk: 40,            // 达到这个分数算"有点像了"档（统计用，显示的台词在 verdicts.js）
   scoreGood: 70,          // 达到这个分数算"漂亮"档
+  scoreStepWeight: 0.7,   // 引导式模拟：每一步偏差的得分在总分里的权重（其余看轮廓重合度）
+
+  // —— 引导式模拟 ——
+  // 送进物理的动作 = 标准动作 + 玩家偏差 × assist（0 = 完全按标准，1 = 完全按玩家）。
+  // 按难度取值；网址参数 ?level=easy|normal|pro 或 ?assist=0.3 可以覆盖
+  assistLevels: { easy: 0.15, normal: 0.4, pro: 1 },
+  assistLevel: 'normal',
 
   // —— 融合（压低出白之前）——
   fusionSec: 0.8,         // 先倒多久不出白（秒，按流量折算）；0 = 一倒就出白

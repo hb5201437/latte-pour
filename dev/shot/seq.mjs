@@ -8,7 +8,7 @@ page.on('pageerror', e => console.log('pageerror:', e.message));
 await page.goto('http://127.0.0.1:5180/dev/shot/regress.html');
 await page.waitForFunction(() => window.ready);
 const url = await page.evaluate(async ({ id, ts, over, segs }) => {
-  Object.assign(window.FP, JSON.parse(over));
+  window.FPover = JSON.parse(over);
   if (segs) window.SEGS = JSON.parse(segs);
   const P = window.PATTERNS_BY_ID[id], demo = window.SEGS || P.fluid?.demo || P.demo;
   const cut = T => { const out = []; let acc = 0; for (const sg of demo) { if (acc >= T) break; const t = Math.min(sg.t, T - acc); const f = t / sg.t; out.push({ ...sg, t, y1: sg.y0 + (sg.y1 - sg.y0) * f }); acc += sg.t; } return out; };

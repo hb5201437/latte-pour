@@ -230,3 +230,14 @@ button:active { transform: scale(0.97); }
 .target .thumb { width: 36px; height: 36px; box-shadow: 0 0 0 2px #efe8df; }
 button.link { background: none; box-shadow: none; padding: 6px; font-size: 0.85rem; color: var(--muted); text-decoration: underline; }
 #hint { padding-left: 120px; }
+
+/* 每一步做得怎么样 */
+.steps { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin: 2px 0 0; font-size: 0.78rem; }
+.steps[hidden] { display: none; }
+.steps span { padding: 3px 9px; border-radius: 999px; border: 1px solid rgba(246, 239, 230, 0.18); color: var(--muted); }
+.steps .ok { color: var(--foam); }
+.steps .meh { color: var(--gold); border-color: rgba(242, 196, 109, 0.4); }
+.steps .bad { color: #f19a7e; border-color: rgba(241, 154, 126, 0.45); }
+/* 调试：辅助强度切换 */
+.assist { position: fixed; top: max(12px, env(safe-area-inset-top)); left: 50%; transform: translateX(-50%); padding: 6px 12px; font-size: 0.8rem; background: rgba(28, 17, 11, 0.6); color: var(--foam); border: 1px solid rgba(246, 239, 230, 0.35); }
+.assist[hidden] { display: none; }

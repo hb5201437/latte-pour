@@ -8,6 +8,7 @@ import { verdict } from './verdicts.js';
 import { initAudio, isMuted, setMuted, resultSound } from './audio.js';
 import { PATTERNS, patternById } from './patterns.js';
 import { renderDemo } from './demos.js';
+import { config } from './config.js';
 
 // 每次部署改一下，页面底部会显示，用来确认手机上跑的是不是最新版
 const BUILD = '1022-r46';
@@ -24,6 +25,14 @@ const debugSensors = params.get('debug') === 'sensors';
 const debugHud = params.get('debug') === '1';
 // ?mode=touch 强制手指模式（手机上对比用）
 const forceTouch = params.get('mode') === 'touch';
+// 引导式模拟的辅助强度：?assist=0.3 直接指定，?level=easy|normal|pro 按难度，否则用 config 的默认难度。
+// ?debug=1 或带了 ?assist 时，画面右上角有个按钮可以切换（记在本机），方便在手机上对比手感
+const ASSIST_KEY = 'latte-pour.assist';
+const assistTunable = debugHud || params.has('assist');
+let assist = config.assistLevels[params.get('level')] ?? config.assistLevels[config.assistLevel];
+if (params.has('assist')) assist = Math.min(1, Math.max(0, Number(params.get('assist')) || 0));
+if (assistTunable) { try { const v = localStorage.getItem(ASSIST_KEY); if (v != null && !params.has('assist')) assist = Number(v); } catch { /* 忽略 */ } }
+const ASSIST_STEPS = [0, 0.15, 0.4, 0.7, 1];
 
 const HINTS = { tilt: t('hintTilt'), touch: t('hintTouch') };
 // 操作说明：只在这台设备的前两杯显示，6 秒后或者一碰屏幕就收起，不一直挡着画面
@@ -141,6 +150,7 @@ $('startBtn').addEventListener('click', async () => {
     mode,
     pattern,
     debug: debugHud,
+    assist,
     onStart: () => { hideHint(); $('flipBtn').hidden = true; count('pour-start', 'Pour started', true); },
     onEnd: r => {
       const v = verdict(r.score, r.overflow);
@@ -157,6 +167,10 @@ $('startBtn').addEventListener('click', async () => {
         : r.tip ? 'tip' + r.tip[0].toUpperCase() + r.tip.slice(1) : null;
       $('tipLine').hidden = !tipKey;
       if (tipKey) $('tipLine').innerHTML = `<b>${t('tipLabel')}</b> ${t(tipKey)}`;
+      // 每一步做得怎么样（引导式模拟的图案才有）
+      $('stepsLine').hidden = !r.steps;
+      if (r.steps) $('stepsLine').innerHTML = r.steps.filter(s => s.id !== 'fusion' && (s.done || s.id !== 'dot'))
+        .map(s => `<span class="${!s.done || s.score < 40 ? 'bad' : s.score < 75 ? 'meh' : 'ok'}">${t('step_' + s.id)} ${!s.done || s.score < 40 ? '✗' : s.score < 75 ? '~' : '✓'}</span>`).join('');
       $('bestLine').textContent = newBest ? t('newBest') : t('best') + ' ' + best;
       $('bestLine').classList.toggle('new', newBest);
       $('result').hidden = false;
@@ -175,6 +189,18 @@ $('startBtn').addEventListener('click', async () => {
     },
   });
   if (debugHud) window.__game = game;
+  if (assistTunable) {
+    const b = $('assistBtn');
+    const label = () => { b.textContent = `assist ${game.assist}`; };
+    b.hidden = false;
+    label();
+    b.addEventListener('click', () => {
+      const i = ASSIST_STEPS.findIndex(v => v >= game.assist - 1e-6);
+      game.setAssist(ASSIST_STEPS[(i + 1) % ASSIST_STEPS.length]);
+      try { localStorage.setItem(ASSIST_KEY, String(game.assist)); } catch { /* 忽略 */ }
+      label();
+    });
+  }
   count('mode-' + mode, mode === 'tilt' ? 'Motion controls' : 'Finger controls', true);
   count('lang-' + lang, 'Language: ' + lang, true);
   $('flipBtn').hidden = mode !== 'tilt';

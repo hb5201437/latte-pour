@@ -12,6 +12,7 @@ import { config } from './config.js';
 //        + 奶柱移动时拖着附近奶泡一起走（晃动、穿心都靠这个）
 // 不追求物理正确，只求看起来像。
 export class FoamSim {
+  usePattern() { /* 旧模型没有图案专用参数 */ }
   constructor(n) {
     this.n = n;
     this.d = new Float32Array(n * n);

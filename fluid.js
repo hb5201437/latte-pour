@@ -58,9 +58,31 @@ void main() {
 uniform sampler2D uVel, uFoam; uniform float dt, damp;
 uniform vec2 jetPos, jetDir; uniform float jetAmp, jetR;
 uniform vec2 srcPos, prevPos, pv; uniform float dragAmp, dragR;
+uniform vec2 tgtC; uniform float tgtR, tgtW, ctlAmp, ctlB, ctlAvoid, ctlTaper, ctlIn, ctlAspect;
+// 目标图案引导（Fattal & Lischinski 2004 的思路，改成适合奶泡的形式）：
+// 目标 = 一个圆（中心、半径由 JS 按奶柱位置和奶泡面积算好）。
+// 奶泡比目标小的地方，顺着奶泡自己的边缘往外推（把已有的奶泡连同纹路一起撑过去，不是画上去）；
+// 奶泡跑到目标外面的地方，顺着目标的梯度往回推
+float pat(vec2 p) { vec4 f = texture(uFoam, p); return max(smoothstep(0.35, 0.75, f.r), smoothstep(0.3, 0.5, f.b)); }
+float patB(vec2 p) {
+  float b = ctlB;
+  return 0.2 * pat(p) + 0.1 * (pat(p + vec2(b, 0.0)) + pat(p - vec2(b, 0.0)) + pat(p + vec2(0.0, b)) + pat(p - vec2(0.0, b))) +
+         0.1 * (pat(p + vec2(b, b) * 0.7) + pat(p + vec2(-b, b) * 0.7) + pat(p + vec2(b, -b) * 0.7) + pat(p - vec2(b, b) * 0.7));
+}
+// 目标形状：上半是圆，下半（拉花缸那侧）越往下越窄，像倒过来的蛋（叶子收成尾巴）
+float tgt(vec2 p) { vec2 d = p - tgtC; d.x *= ctlAspect * (1.0 + ctlTaper * max(0.0, -d.y) / max(tgtR, 1e-4)); return smoothstep(tgtR + tgtW, tgtR - tgtW, length(d)); }
 void main() {
   vec2 u = texture(uVel, vUv).xy * exp(-damp * dt);
   u += jetDir * jetAmp * gauss(vUv, jetPos, jetR) * dt;
+  if (ctlAmp > 0.0) {
+    float e = ctlB;
+    float hb = patB(vUv), t = tgt(vUv);
+    vec2 gh = vec2(patB(vUv + vec2(e, 0.0)) - patB(vUv - vec2(e, 0.0)), patB(vUv + vec2(0.0, e)) - patB(vUv - vec2(0.0, e))) * 0.5;
+    vec2 gt = vec2(tgt(vUv + vec2(e, 0.0)) - tgt(vUv - vec2(e, 0.0)), tgt(vUv + vec2(0.0, e)) - tgt(vUv - vec2(0.0, e))) * 0.5;
+    // 奶柱附近不推：刚冒上来的奶还没分出纹路，推过去只会糊成一片白
+    float away = 1.0 - gauss(vUv, srcPos, ctlAvoid);
+    u += ctlAmp * away * (max(0.0, t - hb) * -gh + ctlIn * hb * (1.0 - t) * gt) * dt;
+  }
   float g = clamp(dragAmp * segGauss(vUv, prevPos, srcPos, dragR) * dt, 0.0, 1.0);
   u += (pv - u) * g;
   o = vec4(u * inside(vUv), 0.0, 1.0);
@@ -156,7 +178,7 @@ void main() {
   // 奶泡浮出、抬高后的细线、融合时咖啡变浅、边缘染色
   inject: `
 uniform sampler2D uFoam; uniform float dt;
-uniform vec2 upPos, srcPos, prevPos; uniform float sharpen, absorbRate, absorbR; uniform float foamRate, foamR, white, lineRate, lineR, mixRate, mixR, tintRate, haloRate;
+uniform vec2 upPos, srcPos, prevPos; uniform float sharpen, sharpMid, absorbRate, absorbR; uniform float foamRate, foamR, white, lineRate, lineR, mixRate, mixR, tintRate, haloRate;
 void main() {
   vec4 f = texture(uFoam, vUv);
   float h = f.r, t = f.g, m = f.b;
@@ -166,7 +188,7 @@ void main() {
   t += e * (0.0 - t);
   m += e * ((1.0 - white) * 0.6 - m);
   // 奶泡和咖啡不互溶：厚度往"有"或"没有"两头推，搬运抹出来的中间值不会一直留着
-  h += sharpen * dt * h * (1.2 - h) * (h - 0.45);
+  h += sharpen * dt * h * (1.2 - h) * (h - sharpMid);
   h = max(h, 0.0);
   // 抬高的奶柱扎下去，把经过的奶泡吸到下面（切出一道细缝，两边被吸口收拢）
   h *= 1.0 - min(1.0, absorbRate * segGauss(vUv, prevPos, srcPos, absorbR) * dt);
@@ -190,7 +212,7 @@ void main() {
 
   // 画面：奶泡按厚度算法线打光，薄处透出下面的咖啡
   render: `
-uniform sampler2D uFoam; uniform float showVel; uniform sampler2D uVel;
+uniform sampler2D uFoam; uniform float showVel, relief; uniform sampler2D uVel;
 void main() {
   vec2 p = vec2(vUv.x, vUv.y);
   float r = length(p - 0.5);
@@ -212,7 +234,7 @@ void main() {
   vec3 col = mix(crema, foamC, cov);
   // 法线：奶泡厚度当高度
   vec2 dx = vec2(texel.x, 0.0), dy = vec2(0.0, texel.y);
-  float hs = 2.5;
+  float hs = relief;
   float gx = (texture(uFoam, p + dx).r - texture(uFoam, p - dx).r) * hs;
   float gy = (texture(uFoam, p + dy).r - texture(uFoam, p - dy).r) * hs;
   vec3 n = normalize(vec3(-gx, -gy, 1.0));
@@ -281,10 +303,10 @@ export const P = {
   haloRate: 0.05,
   fusionSec: 0.8,
   wigMin: 0.15,      // 横移速度峰值低于这个不算在摇（一直出白）
-  whiteSlow: 0.85,    // 横移速度不到这一轮峰值的这个比例：冒上来的是奶泡（摆到两端）
-  whiteFast: 0.96,
-  whiteSlowBack: 0.94, // 往后退时：横移速度超过峰值的这个比例才冒咖啡（只有过中线那一下）
-  whiteFastBack: 0.99,   // 超过这个比例：冒上来的是咖啡（摆到中段，奶柱钻得深）
+  whiteSlow: 0.7,    // 横移速度不到这一轮峰值的这个比例：冒上来的是奶泡（摆到两端）
+  whiteFast: 0.88,
+  whiteSlowBack: 0.55, // 往后退时：横移速度超过峰值的这个比例才冒咖啡（只有过中线那一下）
+  whiteFastBack: 0.75,   // 超过这个比例：冒上来的是咖啡（摆到中段，奶柱钻得深）
   onsetSec: 0.2,    // 停一下再出奶时，先冒一点咖啡再出白（郁金香片与片之间的线）
   pauseSec: 0.08,
   diveSlow: 0.5,     // 往前移动快过这个（杯口直径/秒），浮上来的奶开始变少
@@ -294,10 +316,29 @@ export const P = {
   backSlow: 0.03,    // 往后退的速度（杯口直径/秒）从这里开始算"在往后退"
   backFast: 0.12,
   upLagSec: 0.04,   // 浮出点跟着奶柱横移的延迟（太大左右的叶子连成对称的弧，太小两边断开）
-  spread: 0.6,       // 浮上来的奶里，有多少是从奶泡底下钻过去、把整片奶泡撑开的
+  spread: 0.35,       // 浮上来的奶里，有多少是从奶泡底下钻过去、把整片奶泡撑开的
   spreadL: 0.6,     // 撑开的作用随离浮出点的距离衰减
   sharpen: 0.5,       // 分相的强度
+  sharpMid: 0.45,     // 分相的分界：厚度高于这个往白推、低于往咖啡推（高一点，被挤细的咖啡线不会被抹成白）
+  relief: 2.5,       // 奶泡立体感（按厚度算法线）的强度：大了纹路边缘一棱一棱的像刻出来，小了平
+  fold: 0,           // 1 = 折叠模型（见 step 里的说明），0 = 旧的按速度出白/出褐
+  wigGain: 1,        // 物理看到的摆动幅度 = 输入的摆动 × 这个比例
+  wigGainBack: 1,    // 往后退时的摆动比例
+  jetSwing: 0,       // 往后退时，摆到一边奶柱方向偏转的最大角度（弧度），0 = 一直朝正前方
+  jetSwingStill: 0,  // 原地摇时的偏转角度
+  swingRef: 0.03,    // 输入摆动偏离中线这么多（杯口直径）时偏转到最大
+  plunge: 0,         // 贴着液面倒时落点往下吸的面积（每秒），0 = 关（实验：奶柱把后面的咖啡带进图案，夹在奶泡褶子之间成线）
   oneWay: 0,        // 1 = 只在往右摆的中段冒咖啡（一个来回一道线），0 = 两个方向都冒
+  // —— 目标图案引导（路线图第 2 步）——
+  ctl: 8,           // 引导力的强度（乘上 guide.js 给的 0~1：倒得准 → 强）
+  ctlB: 0.025,       // 量奶泡边缘时的模糊半径
+  ctlW: 0.03,        // 目标圆边缘的过渡宽度
+  ctlAhead: 1.0,    // 目标圆的中心在奶柱前方"半径 × 这个比例"处（奶柱贴着圆的后缘）
+  ctlArea: 1.0,      // 目标圆面积 = 估计的奶泡面积 × 这个比例
+  ctlAvoid: 0.15,     // 奶柱周围这么大范围内不推
+  ctlTaper: 1.5,     // 目标下半部分收窄的程度（0 = 正圆）
+  ctlIn: 1,          // 奶泡跑到目标外面时往回推的力（相对往外撑的力）
+  ctlAspect: 1,      // 目标横向压窄的比例（>1 = 比高窄）
 };
 
 const ss = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
@@ -380,6 +421,8 @@ export class FluidSim {
     this.pausedFor = 0;
     this.sinceOnset = 0;
     this.time = 0;
+    this.tgt = null;
+    this.latC = null;
   }
 
   // inp: { x, y }：奶柱落点（纹理坐标，y 朝上 = 前方），q：流量 0~1，lift：抬高 0~1
@@ -391,6 +434,16 @@ export class FluidSim {
     this.time += dt;
     if (q > 0) this.flowTime += dt * (0.6 + 0.4 * q);
     const foamOn = this.flowTime > P.fusionSec ? 1 : 0;
+    // 手摆的幅度换算：真实视频里缸嘴只摆杯径的 1~4%，玩家的手指/手机摆得大得多。
+    // 横向位置 = 慢速中线 + (摆动部分 × wigGain)，物理只看到缩小后的摆动
+    // 往后退时（拉叶子）用 wigGainBack：视频里退的时候奶泡带甩得更开，扫过中线是斜的、左右交错，收尾一刀切开就成了交错的叶子
+    const gain = P.wigGain + (P.wigGainBack - P.wigGain) * ss(P.backSlow, P.backFast, this.backSpeed ?? 0);
+    this.latC = this.latC == null ? inp.x : this.latC + (inp.x - this.latC) * (1 - Math.exp(-dt / 0.3));
+    // 手腕转动：摆动主要是缸身绕着转，缸嘴几乎不动，但奶柱冲出去的方向左右甩。
+    // 甩的角度跟着输入的摆动走（摆到右边 → 奶柱往 jetSwing 的方向偏），奶泡被交替甩到两边，拉出 S 形的叶脉
+    const bkNow = ss(P.backSlow, P.backFast, this.backSpeed ?? 0);
+    const swing = (P.jetSwingStill + (P.jetSwing - P.jetSwingStill) * bkNow) * Math.max(-1, Math.min(1, (inp.x - this.latC) / P.swingRef));
+    if (gain !== 1) inp = { ...inp, x: this.latC + (inp.x - this.latC) * gain };
     const pv = this.last ? [(inp.x - this.last[0]) / dt, (inp.y - this.last[1]) / dt] : [0, 0];
     this.prevSrc = this.last || [inp.x, inp.y];
     this.last = [inp.x, inp.y];
@@ -410,7 +463,9 @@ export class FluidSim {
     // 原地摇的扇形褐线宽一些
     const bk = ss(P.backSlow, P.backFast, this.backSpeed ?? 0);
     const wS = P.whiteSlow + (P.whiteSlowBack - P.whiteSlow) * bk, wF = P.whiteFast + (P.whiteFastBack - P.whiteFast) * bk;
-    const white = (1 - ss(wS, wF, rel)) * ss(0, P.onsetSec, this.sinceOnset);
+    // fold = 1（折叠模型）：浮上来的一直是白奶，咖啡色线是奶泡带折叠时夹进去的咖啡表面（落点的汇把后面的咖啡带进来）。
+    // fold = 0：旧规则，按横移速度决定冒白还是冒咖啡
+    const white = (P.fold ? 1 : 1 - ss(wS, wF, rel)) * ss(0, P.onsetSec, this.sinceOnset);
     this.debug = { white, rel, latSpeed: this.latSpeed, latPeak: this.latPeak };
     // 奶泡面积（估计）：冒上来的白色部分 + 被撑开的部分；用来把"撑开"的总量分摊到整片奶泡上
     this.foamArea += dt * foamOnNow(this) * q * (1 - lift) * P.upArea;
@@ -429,7 +484,8 @@ export class FluidSim {
     this.backSpeed = (this.backSpeed ?? 0) + (Math.max(0, -pv[1]) - (this.backSpeed ?? 0)) * (1 - Math.exp(-dt / 0.15));
     const lag = P.upLagStill + (P.upLagSec - P.upLagStill) * ss(P.backSlow, P.backFast, this.backSpeed);
     this.upX += (inp.x - this.upX) * (1 - Math.exp(-dt / lag));
-    const up = [this.upX + fwd[0] * ahead, inp.y + fwd[1] * ahead];
+    const jd = [Math.sin(swing), Math.cos(swing)]; // 奶柱冲出去的方向（fwd 转 swing）
+    const up = [this.upX + jd[0] * ahead, inp.y + jd[1] * ahead];
     const Q = foamOn * low * P.upArea;
     const upAmp = Q * (1 - P.spread) / (Math.PI * P.upR * P.upR);
     const spreadAmp = this.foamArea > 0.003 ? Q * P.spread / this.foamArea : 0;
@@ -438,14 +494,24 @@ export class FluidSim {
     const dragPv = [pv[0] * cap, pv[1] * cap];
     // 吸口沿这一帧走过的线段分布：面积 ≈ 圆 + 长条
     const segLen = Math.hypot(inp.x - this.prevSrc[0], inp.y - this.prevSrc[1]);
-    const sinkAmp = q * lift * P.sinkArea / (Math.PI * P.sinkR * P.sinkR + 2 * P.sinkR * Math.sqrt(Math.PI) * segLen);
+    // 贴着液面倒的时候奶柱也往下扎：落点是汇（把后面和两边的液面往里带），奶泡在前面一点浮上来（plunge，实验中）
+    const sinkQ = q * lift * P.sinkArea + foamOn * low * P.plunge;
+    const sinkAmp = sinkQ / (Math.PI * P.sinkR * P.sinkR + 2 * P.sinkR * Math.sqrt(Math.PI) * segLen);
     // 源和汇的净面积由杯壁附近的一圈往下沉的流补上（环 0.40~0.49 的有效面积约 π(0.49²-0.40²)/2）
-    const net = Q * (spreadAmp > 0 ? 1 : 1 - P.spread) - q * lift * P.sinkArea;
+    const net = Q * (spreadAmp > 0 ? 1 : 1 - P.spread) - sinkQ;
     const ringAmp = net / (Math.PI * (0.49 * 0.49 - 0.40 * 0.40) * 0.5);
 
     this.run('advectVel', this.vel[1], { dt }, { uVel: this.vel[0] }); this.swap(this.vel);
+    // 目标图案：奶柱贴着后缘的一个圆，面积和现在的奶泡一样（只改形状，不加奶泡）。收尾时冻结
+    const ctl = inp.ctl ?? 0;
+    if (ctl > 0 && lift < 0.5 && foamOn) {
+      const r = Math.sqrt(this.foamArea * P.ctlArea / Math.PI);
+      this.tgt = { c: [inp.x, inp.y + r * P.ctlAhead], r };
+    }
+    const tg = this.tgt || { c: [0, 0], r: 0 };
     this.run('forces', this.vel[1], {
-      dt, damp: P.damp, jetPos: up, jetDir: fwd, jetAmp: P.jet * q * (1 - lift) + P.liftJet * q * lift, jetR: P.jetR,
+      tgtC: tg.c, tgtR: tg.r, tgtW: P.ctlW, ctlAmp: this.tgt ? P.ctl * ctl : 0, ctlB: P.ctlB, ctlAvoid: P.ctlAvoid, ctlTaper: P.ctlTaper, ctlIn: P.ctlIn, ctlAspect: P.ctlAspect,
+      dt, damp: P.damp, jetPos: up, jetDir: jd, jetAmp: P.jet * q * (1 - lift) + P.liftJet * q * lift, jetR: P.jetR,
       srcPos: [inp.x, inp.y], prevPos: this.prevSrc, pv: dragPv, dragAmp: P.drag * q * (1 - lift) + P.liftDrag * q * lift, dragR: P.dragR + (P.liftDragR - P.dragR) * lift,
     }, { uVel: this.vel[0], uFoam: this.foam[0] });
     this.swap(this.vel);
@@ -470,7 +536,7 @@ export class FluidSim {
       foamRate: foamOn * low * P.foamRate, foamR: P.foamR, white,
       lineRate: foamOn * q * lift * P.lineRate, lineR: P.lineR,
       mixRate: (1 - foamOn) * q * P.mixRate, mixR: P.mixR,
-      tintRate: P.tintRate, haloRate: P.haloRate, sharpen: P.sharpen,
+      tintRate: P.tintRate, haloRate: P.haloRate, sharpen: P.sharpen, sharpMid: P.sharpMid,
     }, { uFoam: this.foam[0] });
     this.swap(this.foam);
   }
@@ -484,6 +550,6 @@ export class FluidSim {
   }
 
   render(showVel = false) {
-    this.run('render', null, { showVel: showVel ? 1 : 0 }, { uFoam: this.foam[0], uVel: this.vel[0] });
+    this.run('render', null, { showVel: showVel ? 1 : 0, relief: P.relief }, { uFoam: this.foam[0], uVel: this.vel[0] });
   }
 }

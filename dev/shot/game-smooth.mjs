@@ -1,15 +1,16 @@
 // 用页面里按帧驱动的平滑手指倒树叶（更接近真手机的触摸事件）。用法：node dev/shot/game-smooth.mjs [out.png] [摆幅px] [频率Hz]
+// 环境变量 ASSIST=0.4 指定引导辅助强度（不给就用默认难度）；PATTERN=heart 改倒心形（原地摇、不往后退）
 import { chromium } from 'playwright-core';
 const out = process.argv[2] || 'dev/shot/game-smooth.png', amp = Number(process.argv[3] || 22), hz = Number(process.argv[4] || 4);
 const b = await chromium.launch({ channel: 'chrome', headless: true, args: ['--use-angle=metal', '--ignore-gpu-blocklist', '--disable-renderer-backgrounding', '--disable-background-timer-throttling'] });
 const page = await b.newPage({ viewport: { width: 390, height: 844 }, deviceScaleFactor: 2 });
 page.on('pageerror', e => console.log('pageerror:', e.message));
-await page.goto('http://127.0.0.1:5180/index.html?mode=touch&lang=en&debug=1' + (process.env.FP ? '&fp=' + encodeURIComponent(process.env.FP) : ''));
-await page.evaluate(() => { localStorage.clear(); localStorage.setItem('latte-pour.pattern', 'rosetta'); localStorage.setItem('latte-pour.hintShown', '9'); });
+await page.goto('http://127.0.0.1:5180/index.html?mode=touch&lang=en&debug=1' + (process.env.FP ? '&fp=' + encodeURIComponent(process.env.FP) : '') + (process.env.ASSIST ? '&assist=' + process.env.ASSIST : ''));
+await page.evaluate(PAT => { localStorage.clear(); localStorage.setItem('latte-pour.pattern', PAT); localStorage.setItem('latte-pour.hintShown', '9'); }, process.env.PATTERN || 'rosetta');
 await page.reload();
 await page.click('#startBtn');
 await page.waitForTimeout(800);
-const score = await page.evaluate(async ({ amp, hz }) => {
+const score = await page.evaluate(async ({ amp, hz, back }) => {
   const cv = document.getElementById('cup'), r = cv.getBoundingClientRect();
   const x0 = r.left + r.width / 2, y0 = r.top + r.height * 0.5;
   const ev = (type, x, y) => cv.dispatchEvent(new PointerEvent(type, { pointerId: 4, clientX: x, clientY: y, bubbles: true, pointerType: 'touch' }));
@@ -19,13 +20,13 @@ const score = await page.evaluate(async ({ amp, hz }) => {
   await new Promise(done => { const f = () => { const t = (performance.now() - t0) / 1000;
     let x = x0;
     if (t > 0.9 && t < 4.6) x = x0 + Math.sin(t * hz * 2 * Math.PI) * amp;
-    if (t >= 3.3 && t < 4.6) y = y0 + (t - 3.3) / 1.3 * 80;
-    if (t >= 4.9) y = y0 + 80 - (t - 4.9) / 0.25 * 260;
+    if (t >= 3.3 && t < 4.6) y = y0 + (t - 3.3) / 1.3 * back;
+    if (t >= 4.9) y = y0 + back - (t - 4.9) / 0.25 * 260;
     ev('pointermove', x, y);
     if (t < 5.15) requestAnimationFrame(f); else { ev('pointerup', x, y); done(); } }; requestAnimationFrame(f); });
   await new Promise(r => setTimeout(r, 2500));
-  return document.getElementById('scoreNum').textContent;
-}, { amp, hz });
+  return document.getElementById('scoreNum').textContent + ' | ' + document.getElementById('stepsLine').textContent + ' | ' + document.getElementById('tipLine').textContent;
+}, { amp, hz, back: process.env.PATTERN === 'heart' ? 0 : 80 });
 console.log('score', score);
 await page.screenshot({ path: out });
 await b.close();

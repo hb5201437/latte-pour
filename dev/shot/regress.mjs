@@ -20,6 +20,14 @@ for (let i = 0; i < cases.length; i++) {
   console.log(`${ok ? '  ok ' : 'FAIL '} ${r.name.padEnd(14, '　')} ${r.pid.padEnd(8)} ${String(r.score).padStart(3)}  (期望 ${r.lo}–${r.hi})  iou ${r.iou} 线/片 ${r.layers} 提示 ${r.tip}`);
   imgs.push({ img: r.img, label: `${r.name} ${r.pid} ${r.score}` });
 }
+const guided = await page.evaluate(() => window.GUIDED);
+for (let i = 0; i < guided.length; i++) {
+  const r = await page.evaluate(i => window.runGuided(i), i);
+  const ok = r.score >= r.lo && r.score <= r.hi && (!r.wantTip || (r.tip || '').includes(r.wantTip));
+  if (!ok) fail++;
+  console.log(`${ok ? '  ok ' : 'FAIL '} ${r.name.padEnd(14, '　')} ${r.pid.padEnd(8)} ${String(r.score).padStart(3)}  (期望 ${r.lo}–${r.hi}${r.wantTip ? ' ' + r.wantTip : ''})  步骤 ${r.stepScore} 轮廓 ${r.shapeScore} 提示 ${r.tip}  [${(r.steps || []).map(s => s.id + ':' + s.score).join(' ')}]`);
+  imgs.push({ img: r.img, label: `${r.name} ${r.score}` });
+}
 const url = await page.evaluate(imgs => new Promise(res => {
   const S = 220, cols = 6, rows = Math.ceil(imgs.length / cols);
   const g = document.createElement('canvas'); g.width = S * cols; g.height = S * rows;

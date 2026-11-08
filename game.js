@@ -7,6 +7,7 @@ import { drawPitcher } from './pitcher.js';
 import { drawTable, drawLiquidGloss, drawSpill, drawStoneBody, drawStoneRim } from './scene.js';
 import { updatePour, splash } from './audio.js';
 import { scorePour } from './score.js';
+import { Guide } from './guide.js';
 import { t } from './i18n.js';
 
 // 杯子不动，玩家移动的是拉花缸。缸嘴对准的点就是入奶点。
@@ -16,8 +17,11 @@ import { t } from './i18n.js';
 //                   向前一推 = 抬高收尾；收回端平 = 倒完
 //   touch（手指）： 按住 = 倒奶，拖动 = 平移拉花缸；快速往前划 = 抬高收尾；松手 = 倒完
 // 流量、穿心降流量、千层纹的规则在 pour.js，两种方式共用。
-export function createGame(canvas, { mode, pattern: initialPattern, onStart, onEnd, debug = false }) {
+export function createGame(canvas, { mode, pattern: initialPattern, onStart, onEnd, debug = false, assist: initialAssist = 1 }) {
   let pattern = initialPattern;
+  // 引导式模拟：玩家的动作先经过 guide.js（标准动作 + 偏差 × assist）再送进物理
+  let assist = initialAssist;
+  let guide = new Guide(pattern, config.gridSize, assist);
   const ctx = canvas.getContext('2d');
   const n = config.gridSize;
   // 奶泡：GPU 真流体（不支持时自动退回旧模型）
@@ -60,6 +64,7 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
   const pour = new Pour();
   // 倒奶点（格坐标）
   const p = { x: n / 2, y: n / 2 };
+  const raw = { x: n / 2, y: n / 2 }; // 陀螺仪模式：玩家自己的倒奶点（引导前）
 
   // 陀螺仪模式状态
   const tiltIn = mode === 'tilt' ? new TiltInput() : null;
@@ -148,6 +153,8 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     if (mode === 'touch' && state === 'ready') {
       p.x = entry.x; p.y = entry.y;
       pour.start(p.x, p.y);
+      guide.start(p.x, p.y);
+      sim.usePattern?.(pattern);
       elapsed = 0;
       state = 'pouring';
       onStart();
@@ -174,8 +181,20 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     state = 'done';
     drag = null;
     unlockScreenAngle();
-    onEnd(overflowed ? { score: 0, overflow: true } : scorePour(sim, pattern));
+    onEnd(overflowed ? { score: 0, overflow: true } : scorePour(sim, pattern, guide.report()));
   }
+
+  // 玩家的倒奶点（格）→ 引导 → 物理。p 是引导后的落点（拉花缸也画在这里）
+  function feed(dt, rx, ry, flowScale, lift = null) {
+    [rx, ry] = clampToCup(rx, ry);
+    const g = guide.apply(dt, rx, ry, flowScale, lift);
+    p.x = g.x; p.y = g.y;
+    clampP();
+    sim.step(dt, { ...pour.update(dt, p.x, p.y, g.flowScale, g.lift), ctl: g.ctl });
+    trackVolume(dt);
+  }
+  // 引导着收尾时，松手不马上结束，等标准的拉线走完
+  const guidedPull = () => assist < 1 && guide.inPull;
 
   // 杯子容量：倒进去的奶（融合 + 出白 + 收尾都算）超过容量就漫出杯沿，直接失败
   let poured = 0;       // 已倒入量（满流量倒 1 秒 = 1）
@@ -234,16 +253,14 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     if (mode === 'tilt') updateTilt(dt);
     else if (state === 'pouring') {
       elapsed += dt;
-      p.x = entry.x; p.y = entry.y;
-      clampP();
-      const paused = touchPausedFor >= 0;
+      const paused = touchPausedFor >= 0 && !guidedPull();
       if (paused) {
         touchPausedFor += dt;
         // 松开太久才算倒完；快速一划（抬高收尾）后松手，马上结束
         if (touchPausedFor * 1000 > config.touchResumeMs || (pour.lift || 0) > 0.5) { touchPausedFor = -1; finish(); return; }
       }
-      sim.step(dt, pour.update(dt, p.x, p.y, paused ? 0 : 1));
-      trackVolume(dt);
+      feed(dt, entry.x, entry.y, paused ? 0 : 1);
+      if (guidedPull() && guide.pullDone) { finish(); return; }
       // 快速一划收尾，拉到杯子前沿就结束（和陀螺仪模式一样），不然奶柱停在杯壁上会把奶泡堆成一团
       const ahead = (p.x - n / 2) * fwd.x + (p.y - n / 2) * fwd.y;
       if (state === 'pouring' && (pour.lift || 0) > 0.5 && ahead >= config.pullEnd * n / 2) finish();
@@ -270,6 +287,9 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
       if (state === 'ready' && tiltIn.calibrated && s.flow > 0) {
         lockScreenAngle();
         pour.start(p.x, p.y);
+        guide.start(p.x, p.y);
+        sim.usePattern?.(pattern);
+        raw.x = p.x; raw.y = p.y;
         elapsed = 0;
         pulling = false;
         lowFor = 0;
@@ -293,26 +313,22 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
       const raise = config.liftRaiseMs / 1000;
       lift = Math.min(1, pullT / raise);
       if (pullT > raise) {
-        p.x += fwd.x * config.tiltPullSpeed * dt;
-        p.y += fwd.y * config.tiltPullSpeed * dt;
+        raw.x += fwd.x * config.tiltPullSpeed * dt;
+        raw.y += fwd.y * config.tiltPullSpeed * dt;
       }
-      flowScale = 1;
+      [raw.x, raw.y] = clampToCup(raw.x, raw.y);
+      feed(dt, raw.x, raw.y, 1, lift);
       const ahead = (p.x - c) * fwd.x + (p.y - c) * fwd.y;
-      clampP();
-      sim.step(dt, pour.update(dt, p.x, p.y, flowScale, lift));
-      trackVolume(dt);
-      if (state === 'pouring' && ahead >= config.pullEnd * c) finish();
+      if (state === 'pouring' && (ahead >= config.pullEnd * c || guidedPull() && guide.pullDone)) finish();
       return;
     }
 
     // 倒奶点 = 入点 + 左右晃带来的横移
-    p.x = entry.x + lat.x * s.lateral;
-    p.y = entry.y + lat.y * s.lateral;
+    raw.x = entry.x + lat.x * s.lateral;
+    raw.y = entry.y + lat.y * s.lateral;
     flowScale = s.flow;
     lift = 0;
-    clampP();
-    sim.step(dt, pour.update(dt, p.x, p.y, flowScale));
-    trackVolume(dt);
+    feed(dt, raw.x, raw.y, flowScale);
     if (state !== 'pouring') return;
 
     if (elapsed * 1000 > config.pushIgnoreMs && s.accel > config.pushAccel) { pulling = true; pullT = 0; }
@@ -488,8 +504,11 @@ export function createGame(canvas, { mode, pattern: initialPattern, onStart, onE
     isTilt: mode === 'tilt',
     // 调试用：当前倒奶状态
     prof: () => ({ fps: +fps.toFixed(1), frameMs: +frameMs.toFixed(2), update: +prof.update.toFixed(2), draw: +prof.draw.toFixed(2) }),
-    debugState: () => ({ state, x: +p.x.toFixed(1), y: +p.y.toFixed(1), q: Math.round(pour.q), lift: +(pour.lift || 0).toFixed(2), piece: pour.piece, poured: +poured.toFixed(2), paused: touchPausedFor, tilt: hud && +hud.tilt.toFixed(1), flow: hud && +(hud.flow || 0).toFixed(2), base: tiltIn && +tiltIn.basePitch.toFixed(1), milk: +pit.milk.toFixed(2) }),
-    setPattern(p) { pattern = p; },
+    debugState: () => ({ state, step: guide.step?.id, assist, x: +p.x.toFixed(1), y: +p.y.toFixed(1), q: Math.round(pour.q), lift: +(pour.lift || 0).toFixed(2), piece: pour.piece, poured: +poured.toFixed(2), paused: touchPausedFor, tilt: hud && +hud.tilt.toFixed(1), flow: hud && +(hud.flow || 0).toFixed(2), base: tiltIn && +tiltIn.basePitch.toFixed(1), milk: +pit.milk.toFixed(2) }),
+    setPattern(p) { pattern = p; guide = new Guide(pattern, n, assist); },
+    // 辅助强度（0 = 完全按标准动作，1 = 完全按玩家），下一杯生效
+    setAssist(a) { assist = a; guide = new Guide(pattern, n, assist); },
+    get assist() { return assist; },
     foamCanvas: sim.isFluid ? sim.canvas : off, // 最后一帧渲染好的奶泡，保存图片用
     reset() {
       sim.reset();
